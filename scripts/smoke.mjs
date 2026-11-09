@@ -14,8 +14,8 @@ async function advance(seconds) {
 }
 async function plot(i) { const p = await page.evaluate(i => window.ecoGame.world.projectPlot(i), i); await page.mouse.click(p.x, p.y); }
 try {
-  await page.goto('http://localhost:4173/?test', { waitUntil: 'networkidle' });
-  await page.locator('#skip').click(); await page.locator('.start-panel').click();
+  await page.goto(`${process.env.GAME_URL ?? 'http://localhost:4173'}/?test`, { waitUntil: 'networkidle' });
+  await page.locator('#skip').click(); await page.locator('#skip-tutorial').click();
   await advance(70);
   await page.locator('[data-tool="leaf"]').click(); await plot(0); await plot(1);
   await advance(31);

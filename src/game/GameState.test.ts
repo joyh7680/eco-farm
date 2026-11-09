@@ -62,3 +62,87 @@ describe('farm simulation', () => {
     s.phase = 'menu'; s.act(1, 'bean'); expect(s.plots[1].crop).toBeNull();
   });
 });
+
+describe('interactive practice', () => {
+  function practice() { const s = game(); s.beginTutorial(); return s; }
+  function plantAndWater(s: GameState) {
+    s.selectTool('leaf'); s.act(0); s.selectTool('water'); s.act(0);
+  }
+
+  it('requires the correct tool selection and plot; wrong inputs never advance or spend resources', () => {
+    const s = practice();
+    expect(s.act(0)).toContain('먼저');
+    expect(s.selectTool('bean')).toContain('현재 연습');
+    s.selectTool('leaf'); expect(s.act(1)).toContain('1번');
+    expect(s.deliver()).toContain('현재 연습');
+    expect(s.tutorial).toBe('plant'); expect(s.money).toBe(300);
+    expect(s.plots.every(p => !p.crop)).toBe(true);
+    s.act(0); expect(s.tutorial).toBe('water');
+    expect(s.money).toBe(285); expect(s.events).toContainEqual({ type: 'plant', plot: 0 });
+    expect(s.act(0, 'water')).toContain('먼저'); expect(s.water).toBe(100);
+    s.selectTool('water'); s.act(0);
+    expect(s.tutorial).toBe('grow'); expect(s.water).toBe(90); expect(s.waterUsed).toBe(10);
+    expect(s.act(0, 'water')).toContain('먼저'); expect(s.water).toBe(90);
+  });
+
+  it('freezes both mission clocks at every step including completion, and only grows after watering', () => {
+    const s = practice(); advance(s, 500);
+    expect(s.tutorial).toBe('plant'); expect(s.time).toBe(0);
+    s.selectTool('leaf'); s.act(0); advance(s, 500);
+    expect(s.plots[0].crop!.growth).toBe(0); expect(s.tutorial).toBe('water');
+    s.selectTool('water'); s.act(0); advance(s, 3);
+    expect(s.plots[0].crop!.growth).toBeCloseTo(0.5, 2);
+    advance(s, 3.1); expect(s.tutorial).toBe('harvest');
+    advance(s, 500); expect(s.plots[0].crop!.dead).toBe(false);
+    s.selectTool('harvest'); s.act(0); advance(s, 500);
+    expect(s.tutorial).toBe('deliver'); s.deliver(); advance(s, 500);
+    expect(s.tutorial).toBe('complete'); expect(s.phase).toBe('playing');
+    expect(s.time).toBe(0); expect(s.remaining).toBe(480); expect(s.drought).toBe(false);
+    expect(s.events.some(e => ['drought', 'won', 'lost'].includes(e.type))).toBe(false);
+  });
+
+  it('uses real harvest, inventory, delivery, and rewards in practice', () => {
+    const s = practice(); plantAndWater(s); advance(s, 6.1);
+    s.selectTool('harvest'); s.act(0);
+    expect(s.tutorial).toBe('deliver'); expect(s.inventory).toEqual([{ kind: 'leaf', afterDrought: false }]);
+    expect(s.harvested).toBe(1); expect(s.plots[0].crop).toBeNull();
+    s.deliver(); expect(s.tutorial).toBe('complete'); expect(s.money).toBe(315);
+    expect(s.delivered).toBe(1); expect(s.revenue).toBe(30); expect(s.inventory).toHaveLength(0);
+    expect(s.deliver()).toContain('현재 연습'); expect(s.delivered).toBe(1);
+  });
+
+  it('pauses practice growth and resumes the same step', () => {
+    const s = practice(); plantAndWater(s); advance(s, 2);
+    const growth = s.plots[0].crop!.growth;
+    s.phase = 'paused'; advance(s, 100); s.selectTool('harvest'); s.act(0); s.deliver();
+    expect(s.plots[0].crop!.growth).toBe(growth); expect(s.tutorial).toBe('grow');
+    s.phase = 'playing'; advance(s, 4.1); expect(s.tutorial).toBe('harvest');
+  });
+
+  it('discards practice state on completion or skipping at any stage, preserving normal speed and drought', () => {
+    for (const stage of ['plant', 'water', 'grow', 'harvest', 'deliver', 'complete']) {
+      const s = practice();
+      if (stage !== 'plant') { s.selectTool('leaf'); s.act(0); }
+      if (!['plant', 'water'].includes(stage)) { s.selectTool('water'); s.act(0); }
+      if (['harvest', 'deliver', 'complete'].includes(stage)) advance(s, 6.1);
+      if (['deliver', 'complete'].includes(stage)) { s.selectTool('harvest'); s.act(0); }
+      if (stage === 'complete') s.deliver();
+      expect(s.tutorial).toBe(stage);
+      s.reset('playing');
+      expect(s).toMatchObject({ tutorial: null, tutorialToolReady: false, time: 0, water: 100, money: 300, delivered: 0, droughtDelivered: 0, harvested: 0, revenue: 0, waterUsed: 0, drought: false, selected: -1, failureReason: '' });
+      expect(s.inventory).toHaveLength(0); expect(s.events).toHaveLength(0); expect(s.plots.every(p => !p.crop)).toBe(true);
+      s.act(0, 'leaf'); advance(s, 6);
+      expect(s.plots[0].crop!.growth).toBeCloseTo(0.2, 3);
+      advance(s, 64.1); expect(s.drought).toBe(true);
+    }
+  });
+
+  it('can replay from an active game and retry after results without stale practice state', () => {
+    const s = game(); s.act(1, 'bean'); advance(s, 80); s.beginTutorial();
+    expect(s.tutorial).toBe('plant'); expect(s.time).toBe(0); expect(s.drought).toBe(false);
+    expect(s.plots.every(p => !p.crop)).toBe(true);
+    s.reset('playing'); advance(s, 481); expect(s.phase).toBe('lost');
+    s.reset(); expect(s.tutorial).toBeNull(); expect(s.phase).toBe('intro');
+    s.beginTutorial(); plantAndWater(s); advance(s, 6.1); expect(s.tutorial).toBe('harvest');
+  });
+});

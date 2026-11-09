@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 
-const base = process.env.GAME_URL ?? 'http://localhost:5173';
+const base = process.env.GAME_URL ?? 'http://localhost:5174';
 await mkdir('test-results', { recursive: true });
 const browser = await chromium.launch({ channel: process.env.BROWSER_CHANNEL ?? 'chrome', headless: true, args: ['--enable-webgl', '--ignore-gpu-blocklist'] });
 const errors = [];
@@ -18,6 +18,14 @@ async function plot(id) {
   await page.mouse.click(p.x, p.y);
 }
 async function tool(name) { await page.locator(`[data-tool="${name}"]`).click(); }
+async function freshMission(target = page) {
+  const snapshot = await target.evaluate(() => {
+    const s = window.ecoGame.state;
+    return { tutorial: s.tutorial, water: s.water, money: s.money, delivered: s.delivered, droughtDelivered: s.droughtDelivered, harvested: s.harvested, waterUsed: s.waterUsed, revenue: s.revenue, drought: s.drought, inventory: s.inventory.length, empty: s.plots.every(p => !p.crop), remaining: s.remaining };
+  });
+  assert.deepEqual({ ...snapshot, remaining: 480 }, { tutorial: null, water: 100, money: 300, delivered: 0, droughtDelivered: 0, harvested: 0, waterUsed: 0, revenue: 0, drought: false, inventory: 0, empty: true, remaining: 480 });
+  assert.ok(snapshot.remaining > 479 && snapshot.remaining <= 480);
+}
 
 try {
   await page.goto(`${base}/?test`, { waitUntil: 'networkidle' });
@@ -30,12 +38,58 @@ try {
   await page.waitForSelector('#start-screen:not([hidden])');
   assert.equal(await read(() => window.ecoGame.state.phase), 'briefing');
   assert.equal(await read(() => window.ecoGame.state.time), 0);
-  assert.equal(await page.locator('#start-screen button').count(), 0);
+  assert.equal(await page.locator('#start-screen button').count(), 2);
   await shot('01-briefing');
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(5500);
   assert.equal(await read(() => window.ecoGame.state.time), 0);
-  await page.waitForFunction(() => window.ecoGame.state.phase === 'playing');
-  console.log('PASS: page open → automatic space approach → 3D landing → button-free briefing (timer frozen) → automatic gameplay');
+  assert.equal(await read(() => window.ecoGame.state.phase), 'briefing');
+  await page.locator('#learn').click();
+  assert.equal(await read(() => window.ecoGame.state.tutorial), 'plant');
+  await shot('10-tutorial-plant');
+  await plot(0); // Default selection is not an explicit tutorial tool selection.
+  assert.equal(await read(() => window.ecoGame.state.tutorial), 'plant');
+  await page.keyboard.press('Digit2'); await page.keyboard.press('Digit5');
+  assert.equal(await read(() => window.ecoGame.state.money), 300);
+  assert.equal(await page.locator('[data-tool="bean"]').isDisabled(), true);
+  await tool('leaf'); await plot(1);
+  assert.equal(await read(() => window.ecoGame.state.tutorial), 'plant');
+  await plot(0);
+  assert.equal(await read(() => window.ecoGame.state.tutorial), 'water');
+  await page.waitForTimeout(1000);
+  assert.equal(await read(() => window.ecoGame.state.plots[0].crop.growth), 0);
+  assert.equal(await read(() => window.ecoGame.state.time), 0);
+  await tool('water'); await plot(0);
+  assert.equal(await read(() => window.ecoGame.state.water), 90);
+  assert.equal(await read(() => window.ecoGame.state.tutorial), 'grow');
+  await page.waitForTimeout(1200);
+  await shot('11-tutorial-grow');
+  await page.locator('#pause').click();
+  const practiceGrowth = await read(() => window.ecoGame.state.plots[0].crop.growth);
+  await page.waitForTimeout(400);
+  assert.equal(await read(() => window.ecoGame.state.plots[0].crop.growth), practiceGrowth);
+  await page.locator('#resume').click();
+  await page.keyboard.press('F3'); await page.waitForTimeout(1100);
+  report.desktop.practiceRenderer = await page.locator('#debug').textContent();
+  await page.keyboard.press('F3');
+  await page.waitForFunction(() => window.ecoGame.state.tutorial === 'harvest');
+  assert.equal(await read(() => window.ecoGame.state.plots[0].crop.growth), 1);
+  await tool('harvest'); await plot(0);
+  assert.equal(await read(() => window.ecoGame.state.tutorial), 'deliver');
+  assert.equal(await read(() => window.ecoGame.state.inventory.length), 1);
+  await shot('12-tutorial-inventory');
+  await page.locator('#deliver').click();
+  assert.equal(await read(() => window.ecoGame.state.tutorial), 'complete');
+  assert.equal(await read(() => window.ecoGame.state.money), 315);
+  assert.equal(await read(() => window.ecoGame.state.delivered), 1);
+  await shot('13-tutorial-complete');
+  await page.waitForTimeout(400);
+  assert.equal(await read(() => window.ecoGame.state.time), 0);
+  assert.equal(await read(() => window.ecoGame.state.drought), false);
+  await page.locator('#start-mission').click();
+  await freshMission();
+  assert.equal(await page.locator('#tutorial-window').isHidden(), true);
+  assert.equal(await page.locator('.tutorial-highlight').count(), 0);
+  console.log('PASS: real opening → deliberate mission briefing → all 5 raycast tutorial actions → frozen timers, real rewards → clean mission reset; invalid tools/plots blocked');
 
   await tool('leaf'); for (const i of [0, 1, 2]) await plot(i);
   await tool('bean'); for (const i of [3, 4, 5]) await plot(i);
@@ -44,8 +98,20 @@ try {
   await tool('water'); await plot(0);
   assert.equal(await read(() => window.ecoGame.state.water), 90);
   assert.equal(await read(() => window.ecoGame.state.selected), 0);
+  await page.locator('#help').click();
+  const helpState = await read(() => JSON.stringify(window.ecoGame.state));
+  await page.waitForTimeout(500);
+  assert.equal(await read(() => JSON.stringify(window.ecoGame.state)), helpState);
+  await page.locator('#replay-tutorial').click();
+  assert.equal(await page.locator('#replay-confirm').isVisible(), true);
+  await page.locator('#cancel-replay').click(); await page.locator('#close-help').click();
+  assert.equal(await read(() => window.ecoGame.state.phase), 'playing');
+  assert.equal(await read(() => window.ecoGame.state.money), 180);
+  assert.equal(await read(() => window.ecoGame.state.plots.filter(p => p.crop).length), 6);
   await page.locator('#pause').click();
   const pausedTime = await read(() => window.ecoGame.state.time);
+  await page.locator('#pause-help').click(); await page.locator('#close-help').click();
+  assert.equal(await read(() => window.ecoGame.state.phase), 'paused');
   await page.waitForTimeout(700);
   assert.equal(await read(() => window.ecoGame.state.time), pausedTime);
   await page.locator('#resume').click();
@@ -83,13 +149,24 @@ try {
 
   await page.locator('#retry').click(); await page.locator('#skip').click();
   await page.waitForSelector('#start-screen:not([hidden])');
-  await page.keyboard.press('Enter');
+  await page.locator('#skip-tutorial').click();
   await page.waitForFunction(() => window.ecoGame.state.phase === 'playing');
+  await freshMission();
   assert.equal(await read(() => window.ecoGame.state.money), 300);
   assert.equal(await read(() => window.ecoGame.state.water), 100);
   assert.equal(await read(() => window.ecoGame.state.delivered), 0);
   assert.equal(await read(() => window.ecoGame.state.drought), false);
   assert.ok(await read(() => window.ecoGame.state.plots.every(p => p.crop === null)));
+  await tool('bean'); await plot(2);
+  await page.locator('#help').click(); await page.locator('#replay-tutorial').click();
+  assert.equal(await read(() => window.ecoGame.state.plots[2].crop.kind), 'bean');
+  await page.locator('#confirm-replay').click();
+  assert.equal(await read(() => window.ecoGame.state.tutorial), 'plant');
+  assert.equal(await page.locator('#help-screen').isHidden(), true);
+  assert.equal(await read(() => window.ecoGame.state.money), 300);
+  await tool('leaf'); await plot(0);
+  await page.locator('#end-practice').click();
+  await freshMission();
   // Only the timeout failure is accelerated; the successful mission above ran in wall time.
   await page.evaluate(() => { for (let i = 0; i < 9601; i++) window.ecoGame.state.update(0.05); });
   await page.waitForSelector('#result-screen:not([hidden])');
@@ -97,13 +174,37 @@ try {
   assert.match(await page.locator('#result-description').textContent(), /시간/);
   await shot('07-failure');
   await page.locator('#main-menu').click(); await page.waitForSelector('#intro-screen:not([hidden])');
-  console.log('PASS: clean restart, intro skip, keyboard briefing dismissal, accelerated timeout failure, return to opening');
+  console.log('PASS: retry, intro/tutorial skip, help preservation and replay cancellation, confirmed practice reset, mid-practice skip, accelerated timeout failure, return to opening');
 
   const tablet = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, deviceScaleFactor: 2, isMobile: true });
   const touch = await tablet.newPage();
   touch.on('pageerror', e => errors.push(`tablet: ${e.message}`));
   await touch.goto(`${base}/?test`, { waitUntil: 'networkidle' });
-  await touch.locator('#skip').tap(); await touch.locator('.start-panel').tap();
+  await touch.locator('#skip').tap(); await touch.locator('#learn').tap();
+  async function touchPlot(i) { const p = await touch.evaluate(i => window.ecoGame.world.projectPlot(i), i); await touch.touchscreen.tap(p.x, p.y); }
+  await touch.locator('[data-tool="leaf"]').tap(); await touchPlot(0);
+  assert.equal(await touch.evaluate(() => window.ecoGame.state.tutorial), 'water');
+  await touch.locator('[data-tool="water"]').tap(); await touchPlot(0);
+  await touch.waitForTimeout(1100);
+  await touch.screenshot({ path: 'test-results/14-tablet-tutorial.png' });
+  await touch.setViewportSize({ width: 768, height: 1024 }); await touch.waitForTimeout(150);
+  await touch.screenshot({ path: 'test-results/15-portrait-tutorial.png' });
+  await touch.setViewportSize({ width: 844, height: 390 }); await touch.waitForTimeout(150);
+  await touch.screenshot({ path: 'test-results/16-landscape-tutorial.png' });
+  async function checkVisible(selector) {
+    const b = await touch.locator(selector).boundingBox();
+    const v = touch.viewportSize();
+    assert.ok(b && b.x >= 0 && b.y >= 0 && b.x + b.width <= v.width && b.y + b.height <= v.height, `${selector} must fit viewport`);
+  }
+  await checkVisible('#tutorial-window'); await checkVisible('#plot-info');
+  await touch.waitForFunction(() => window.ecoGame.state.tutorial === 'harvest');
+  await touch.locator('[data-tool="harvest"]').tap(); await touchPlot(0);
+  assert.equal(await touch.evaluate(() => window.ecoGame.state.inventory.length), 1);
+  await touch.locator('#deliver').tap();
+  await checkVisible('#tutorial-window'); await checkVisible('#start-mission');
+  await touch.screenshot({ path: 'test-results/17-landscape-complete.png' });
+  await touch.locator('#start-mission').tap(); await freshMission(touch);
+  await touch.setViewportSize({ width: 1024, height: 768 }); await touch.waitForTimeout(150);
   await touch.locator('[data-tool="bean"]').tap();
   const coord = await touch.evaluate(() => window.ecoGame.world.projectPlot(4));
   await touch.touchscreen.tap(coord.x, coord.y);
@@ -116,7 +217,7 @@ try {
   await touch.screenshot({ path: 'test-results/08-tablet.png' });
   await touch.setViewportSize({ width: 844, height: 390 }); await touch.waitForTimeout(500);
   await touch.screenshot({ path: 'test-results/09-small-landscape.png' });
-  report.tablet = { viewport: '1024×768, touch, DPR 2 emulated', planted: true, watered: true, noScrolling: true, tools: buttons };
+  report.tablet = { viewport: '1024×768, 768×1024, 844×390; touch, DPR 2 emulated', tutorialCompleted: true, freshMission: true, planted: true, watered: true, noScrolling: true, tools: buttons };
   await tablet.close();
   console.log('PASS: tablet touch raycasting, planting, watering, touch target bounds, no scrolling, landscape resize');
   assert.deepEqual(errors, []);

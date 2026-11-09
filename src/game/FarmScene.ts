@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Crop, GameState } from './GameState';
+import { TUTORIAL_PLOT } from './Tutorial';
 
 const C = {
   grass: '#427d54', grassLight: '#75a75c', dark: '#193f37', soil: '#674b36',
@@ -542,7 +543,9 @@ export class FarmScene {
     this.waterLevel.position.y = 1.425 + state.water / 100 * 0.625;
     this.beacon.scale.setScalar(0.15 + Math.sin(this.elapsed * 3) * 0.03);
     this.plots.forEach((v, i) => {
-      v.highlight.visible = state.selected === i;
+      const guided = !!state.tutorial && !['deliver', 'complete'].includes(state.tutorial) && i === TUTORIAL_PLOT;
+      v.highlight.visible = guided || !state.tutorial && state.selected === i;
+      v.highlight.scale.setScalar(guided ? 1.03 + Math.sin(this.elapsed * 4) * 0.025 : 1);
       this.updateCrop(v, state.phase === 'menu' ? this.previewCrops[i] : state.plots[i].crop, this.elapsed);
       if (state.phase === 'menu') v.marker.visible = false;
       if (!state.plots[i].crop) (v.soil.material as THREE.MeshLambertMaterial).color.set(C.soil).lerp(this.dryColor, this.dryBlend * 0.45);

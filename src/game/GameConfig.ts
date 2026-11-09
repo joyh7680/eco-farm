@@ -1,7 +1,7 @@
 export type CropKind = 'leaf' | 'bean';
 export type Action = CropKind | 'water' | 'harvest';
 export const CONFIG = {
-  introDuration: 8, briefingDuration: 5,
+  introDuration: 8,
   duration: 480, droughtAt: 70, droughtMultiplier: 2.25,
   startingWater: 100, startingMoney: 300, deliveryGoal: 4, droughtGoal: 2,
   wateringCost: 10, wateringAmount: 55, initialMoisture: 68, deathAfter: 22,

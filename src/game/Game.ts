@@ -3,6 +3,7 @@ import { FarmScene } from './FarmScene';
 import { GameAudio } from './Audio';
 import { GameHUD } from '../ui/GameHUD';
 import { CONFIG, type Action } from './GameConfig';
+import { TUTORIAL_PLOT } from './Tutorial';
 
 export class Game {
   readonly state = new GameState();
@@ -12,18 +13,22 @@ export class Game {
   private lastTime = 0;
   private accumulator = 0;
   private introTime = 0;
-  private briefingTime = 0;
   private landed = false;
   private frames = 0;
   private fpsTime = 0;
   private fps = 0;
   private hudTime = 0;
   private hiddenPaused = false;
+  private helpResume = false;
 
   constructor(container: HTMLElement) {
     this.world = new FarmScene(container);
     this.hud = new GameHUD(container);
-    this.hud.onContinue = () => this.beginFarming();
+    this.hud.onContinue = () => this.beginTutorial();
+    this.hud.onStartMission = () => this.beginFarming();
+    this.hud.onHelp = () => this.openHelp();
+    this.hud.onCloseHelp = () => this.closeHelp();
+    this.hud.onReplayTutorial = () => this.beginTutorial();
     this.hud.onRetry = () => this.start();
     this.hud.onSkip = () => this.finishIntro();
     this.hud.onMenu = () => this.start();
@@ -41,7 +46,7 @@ export class Game {
         const message = this.state.act(target.plot);
         if (message) this.hud.toast(message);
         this.processEvents(); this.hud.update(this.state);
-      } else { this.state.selected = -1; this.hud.update(this.state); }
+      } else if (!this.state.tutorial) { this.state.selected = -1; this.hud.update(this.state); }
     });
     this.world.renderer.domElement.addEventListener('pointermove', e => {
       if (this.state.phase !== 'playing') return;
@@ -53,8 +58,9 @@ export class Game {
     document.addEventListener('keydown', () => this.audio.start(), { once: true, capture: true });
     window.addEventListener('keydown', e => {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (this.state.phase === 'briefing' && ['Enter', 'Space', 'Escape'].includes(e.code)) { e.preventDefault(); this.beginFarming(); return; }
       if (e.target instanceof HTMLButtonElement && ['Space', 'Enter'].includes(e.code)) return;
+      if (this.hud.helpOpen) { if (e.code === 'Escape') { e.preventDefault(); this.closeHelp(); } return; }
+      if (this.state.phase === 'briefing') { if (e.code === 'Enter') { e.preventDefault(); this.beginTutorial(); } return; }
       if (e.code === 'F3') { e.preventDefault(); this.hud.el('debug').hidden = !this.hud.el('debug').hidden; }
       if (e.code === 'KeyQ') this.hud.onQuality();
       if (e.code === 'Space' || e.code === 'Escape') { e.preventDefault(); if (this.state.phase === 'intro') this.finishIntro(); else this.pause(); }
@@ -74,35 +80,59 @@ export class Game {
 
   start() {
     this.state.reset('intro'); this.world.resetEffects();
-    this.introTime = 0; this.briefingTime = 0; this.landed = false; this.accumulator = 0;
+    this.hud.resetTransient(); this.hiddenPaused = false; this.helpResume = false;
+    this.introTime = 0; this.landed = false; this.accumulator = 0;
     this.hud.update(this.state);
   }
 
   finishIntro() {
     if (this.state.phase !== 'intro') return;
-    this.introTime = CONFIG.introDuration; this.state.phase = 'briefing'; this.briefingTime = 0; this.accumulator = 0;
+    this.introTime = CONFIG.introDuration; this.state.phase = 'briefing'; this.accumulator = 0;
     this.world.burst(-1, 'land'); this.hud.update(this.state);
-    this.hud.briefing(0);
   }
 
   beginFarming() {
-    if (this.state.phase !== 'briefing') return;
-    this.state.phase = 'playing'; this.accumulator = 0;
+    if (this.state.phase !== 'briefing' && !this.state.tutorial) return;
+    this.state.reset('playing'); this.world.resetEffects(); this.hud.resetTransient(); this.accumulator = 0;
     this.hud.update(this.state);
-    this.hud.toast('착륙 완료! 도구를 고른 뒤, 번호가 있는 밭을 눌러 씨앗을 심으세요.', 5000);
+    this.hud.toast('임무 시작! 물 100 · 300G · 가뭄까지 70초. 도구를 고른 뒤 밭을 눌러주세요.', 5000);
+  }
+
+  beginTutorial() {
+    this.state.beginTutorial(); this.world.resetEffects(); this.hud.resetTransient();
+    this.accumulator = 0; this.hiddenPaused = false; this.helpResume = false;
+    this.hud.update(this.state);
+  }
+
+  openHelp() {
+    if (this.hud.helpOpen || !['playing', 'paused'].includes(this.state.phase)) return;
+    this.helpResume = this.state.phase === 'playing';
+    this.state.phase = 'paused'; this.accumulator = 0;
+    this.hud.showHelp(true); this.hud.update(this.state);
+  }
+
+  closeHelp() {
+    this.hud.showHelp(false);
+    if (this.helpResume && this.state.phase === 'paused') this.state.phase = 'playing';
+    this.helpResume = false; this.accumulator = 0; this.hud.update(this.state);
   }
 
   pause() {
+    if (this.hud.helpOpen) return;
     if (this.state.phase === 'playing') this.state.phase = 'paused';
     else if (this.state.phase === 'paused') { this.state.phase = 'playing'; this.audio.start(); }
     this.accumulator = 0; this.hud.update(this.state);
   }
 
   selectTool(action: Action) {
-    this.state.action = action; this.audio.play('click'); this.hud.update(this.state);
+    const message = this.state.selectTool(action);
+    if (message) this.hud.toast(message);
+    else this.audio.play('click');
+    this.hud.update(this.state);
   }
 
   applySelected() {
+    if (this.state.tutorial) return;
     const plot = this.state.plots[this.state.selected]; if (!plot) return;
     const action = plot.crop?.dead || plot.crop?.growth === 1 ? 'harvest' : plot.crop ? 'water' : this.state.action === 'bean' ? 'bean' : 'leaf';
     const message = this.state.act(plot.id, action); if (message) this.hud.toast(message);
@@ -135,10 +165,6 @@ export class Game {
       this.hud.intro(this.introTime);
       if (this.introTime >= 7 && !this.landed) { this.landed = true; this.world.burst(-1, 'land'); this.audio.play('deliver'); }
       if (this.introTime >= CONFIG.introDuration) this.finishIntro();
-    } else if (this.state.phase === 'briefing') {
-      if (!document.hidden) this.briefingTime += dt;
-      this.hud.briefing(this.briefingTime);
-      if (this.briefingTime >= CONFIG.briefingDuration) this.beginFarming();
     }
     if (this.state.phase === 'playing') {
       this.accumulator += dt;
@@ -146,7 +172,11 @@ export class Game {
       this.processEvents();
     }
     this.hudTime += dt;
-    if (this.hudTime >= 0.1) { this.hud.update(this.state); this.hudTime = 0; }
+    if (this.hudTime >= 0.1) {
+      this.hud.update(this.state);
+      if (this.state.tutorial) this.hud.positionGuide(this.world.projectPlot(TUTORIAL_PLOT));
+      this.hudTime = 0;
+    }
     this.world.render(this.state, dt, this.state.phase === 'intro' ? this.introTime : -1);
     this.frames++; this.fpsTime += dt;
     if (this.fpsTime >= 1) { this.fps = Math.round(this.frames / this.fpsTime); this.frames = 0; this.fpsTime = 0; }

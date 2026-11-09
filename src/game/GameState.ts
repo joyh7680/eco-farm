@@ -1,4 +1,5 @@
 import { CONFIG, type Action, type CropKind } from './GameConfig';
+import { TUTORIAL, TUTORIAL_GROWTH_SECONDS, TUTORIAL_PLOT, type TutorialStep } from './Tutorial';
 
 export type Phase = 'menu' | 'intro' | 'briefing' | 'playing' | 'paused' | 'won' | 'lost';
 export interface Crop {
@@ -26,6 +27,27 @@ export class GameState {
   plots: Plot[] = Array.from({ length: 6 }, (_, id) => ({ id, crop: null }));
   events: GameEvent[] = [];
   failureReason = '';
+  tutorial: TutorialStep | null = null;
+  tutorialToolReady = false;
+
+  beginTutorial() {
+    this.reset('playing');
+    this.tutorial = 'plant';
+    this.selected = TUTORIAL_PLOT;
+  }
+
+  selectTool(action: Action): string | null {
+    if (this.phase !== 'playing') return null;
+    if (this.tutorial && TUTORIAL[this.tutorial].action !== action) return '빛나는 도구로 현재 연습을 완료해 주세요.';
+    this.action = action;
+    this.tutorialToolReady = true;
+    return null;
+  }
+
+  private nextTutorial(step: TutorialStep) {
+    this.tutorial = step;
+    this.tutorialToolReady = false;
+  }
 
   reset(phase: Phase = 'intro') {
     Object.assign(this, new GameState());
@@ -36,6 +58,9 @@ export class GameState {
     if (this.phase !== 'playing') return null;
     const plot = this.plots[id];
     if (!plot) return null;
+    if (this.tutorial && (id !== TUTORIAL_PLOT || action !== TUTORIAL[this.tutorial].action || !this.tutorialToolReady)) {
+      return '안내된 도구를 먼저 선택한 뒤 빛나는 1번 밭을 눌러주세요.';
+    }
     this.selected = id;
     const crop = plot.crop;
     if (action === 'leaf' || action === 'bean') {
@@ -67,12 +92,16 @@ export class GameState {
         this.events.push({ type: 'harvest', plot: id });
       }
     }
+    if (this.tutorial === 'plant') this.nextTutorial('water');
+    else if (this.tutorial === 'water') this.nextTutorial('grow');
+    else if (this.tutorial === 'harvest') this.nextTutorial('deliver');
     this.checkMission();
     return null;
   }
 
   deliver(): string | null {
     if (this.phase !== 'playing') return null;
+    if (this.tutorial && this.tutorial !== 'deliver') return '먼저 현재 연습 단계를 완료해 주세요.';
     if (!this.inventory.length) return '수확한 작물을 보급 기지에 납품할 수 있어요.';
     for (const item of this.inventory) {
       const price = CONFIG.crops[item.kind].price;
@@ -83,12 +112,25 @@ export class GameState {
     }
     this.inventory = [];
     this.events.push({ type: 'deliver' });
+    if (this.tutorial === 'deliver') this.nextTutorial('complete');
     this.checkMission();
     return null;
   }
 
   update(dt: number) {
     if (this.phase !== 'playing' || !Number.isFinite(dt) || dt <= 0) return;
+    // Practice advances only this crop, never the mission or drought clock.
+    if (this.tutorial) {
+      if (this.tutorial === 'grow') {
+        const crop = this.plots[TUTORIAL_PLOT].crop;
+        if (crop) {
+          crop.growth = Math.min(1, crop.growth + dt / TUTORIAL_GROWTH_SECONDS);
+          crop.moisture = Math.max(0, crop.moisture - CONFIG.crops[crop.kind].drain * dt);
+          if (crop.growth >= 1) this.nextTutorial('harvest');
+        }
+      }
+      return;
+    }
     // A fixed, small simulation step keeps drought and recovery independent of rendering FPS.
     this.time = Math.min(CONFIG.duration, this.time + dt);
     if (!this.drought && this.time >= CONFIG.droughtAt) {
@@ -109,7 +151,7 @@ export class GameState {
   }
 
   checkMission() {
-    if (this.phase !== 'playing') return;
+    if (this.phase !== 'playing' || this.tutorial) return;
     if (this.delivered >= CONFIG.deliveryGoal && this.droughtDelivered >= CONFIG.droughtGoal) {
       this.phase = 'won';
       this.events.push({ type: 'won' });

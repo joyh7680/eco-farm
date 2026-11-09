@@ -10,3 +10,39 @@
 .briefing-overlay{justify-content:center;padding:24px;background:#16372f85;backdrop-filter:blur(3px);pointer-events:auto;cursor:pointer}.briefing-overlay .start-panel{max-width:calc(100vw - 40px);max-height:calc(100dvh - 48px);overflow-y:auto;cursor:pointer}.briefing-countdown{text-align:center;color:#657b55;font-size:10px;margin:19px 0 10px}.briefing-countdown small{display:block;font-size:8px;color:#93947b;margin-top:6px}.briefing-progress{height:2px;background:#cbd0ae;margin-top:13px}.briefing-progress i{display:block;width:0;height:100%;background:#74945e;transition:width .1s linear}#ui[data-phase="briefing"] .top-hud,#ui[data-phase="briefing"] .utility-bar,#ui[data-phase="briefing"] .portrait-hint,#ui[data-phase="intro"] .portrait-hint{display:none}
 @media(max-height:580px){.briefing-overlay{padding:14px}.briefing-overlay .start-panel{max-height:calc(100dvh - 28px)}.briefing-countdown{font-size:9px;margin:12px 0 8px}.briefing-progress{margin-top:9px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* In-world training keeps the map interactive; only the small windows receive input. */
+.mission-brief{width:390px;border-radius:0;border:2px solid #c2cd9d;box-shadow:5px 5px 0 #152e29}
+.mission-brief h2{font-size:24px;margin:18px 0!important}.mission-brief h2 small{display:block;font:11px var(--mono);letter-spacing:2px;color:#668055;margin-bottom:8px}
+.mission-brief .story{font-size:13px;line-height:1.9;margin:14px 0}.brief-objectives{list-style:none;padding:14px 0;margin:12px 0;border-block:1px solid #b7bd98}
+.brief-objectives li{display:flex;justify-content:space-between;gap:12px;font-size:12px;margin:12px 0;color:#647453}.brief-objectives b{text-align:right;color:var(--ink);font-weight:600}
+.practice-note{font-size:11px!important;line-height:1.8!important;color:#738267;margin:14px 0!important}
+.mission-brief .primary-button,.help-modal .primary-button{min-height:48px;font-size:13px}.mission-brief .text-button{font-size:11px;min-height:44px}
+.briefing-overlay{backdrop-filter:none;background:#16372f55;cursor:default}.briefing-overlay .start-panel{cursor:default}
+.tutorial-window{position:absolute;left:24px;top:112px;width:278px;padding:16px;background:#243f34f5;border:2px solid #a9c18b;border-radius:0;box-shadow:4px 4px 0 #152e29;z-index:6;pointer-events:auto}
+.tutorial-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font:10px var(--mono);letter-spacing:1px;color:#e8d392}.tutorial-heading b{font:10px 'Noto Sans KR',sans-serif;color:#c3d4aa}
+.tutorial-dots{display:flex;gap:4px;margin:12px 0}.tutorial-dots i{flex:1;height:3px;background:#9aaf8833}.tutorial-dots .done{background:#b7ca8a}.tutorial-dots .current{background:#f3d880;box-shadow:0 0 5px #f3d88066}
+.tutorial-window h2{font-size:17px;line-height:1.55;margin:10px 0;font-weight:700;letter-spacing:-.6px}.tutorial-window p{font-size:12px;line-height:1.85;margin:9px 0;color:#d4dfc5;word-break:keep-all;overflow-wrap:anywhere}
+.tutorial-window .tutorial-feedback{font-size:11px;color:#bed59b;margin-bottom:13px}.tutorial-window .tutorial-instruction{font-size:11px;color:#f0d485;border-top:1px solid #bbcd9d33;padding-top:10px}
+.tutorial-window .tutorial-clock{font-size:10px;color:#a2bba6;margin:10px 0 0}.tutorial-window .text-button{font-size:10px;min-height:44px;margin-top:5px;color:#b5c3a4}.tutorial-window .primary-button{font-size:12px;min-height:48px;margin-top:14px}
+#tutorial-reset-note{font-size:10px;color:#c0d398;border-top:1px solid #bbcd9d33;padding-top:10px}
+#ui[data-tutorial]:not([data-tutorial=""]) .mission-widget,#ui[data-tutorial]:not([data-tutorial=""]) .map-label{display:none}
+#ui[data-tutorial]:not([data-tutorial=""]) .tool-hint{visibility:hidden}
+#ui[data-tutorial="complete"] .tutorial-clock{display:none}
+.tool:disabled{opacity:.35;filter:saturate(.3)}.tool:disabled:hover{background:transparent;border-color:transparent}
+.tutorial-highlight{outline:2px solid #f3d780!important;outline-offset:3px;animation:tutorial-glow 1.6s ease-in-out infinite;position:relative;z-index:1}
+.tool.tutorial-highlight{background:#f0dfa2!important;opacity:1}.tool.tutorial-highlight:before{content:'▼';position:absolute;top:-26px;left:calc(50% - 6px);font-size:15px;color:#fff1a4;text-shadow:0 2px #254133}
+#crop-details.tutorial-highlight{padding:5px 7px;margin-top:15px;margin-bottom:4px}.cargo-resource.tutorial-highlight{outline-offset:7px}
+.plot-guide{position:absolute;z-index:2;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;gap:5px;pointer-events:none;color:#ffe897;text-shadow:0 2px #203d31;font-size:13px}
+.plot-guide span{font-size:10px;padding:4px 8px;background:#203d31ed;border:1px solid #ead282;white-space:nowrap}.plot-guide b{animation:guide-bob 1.2s ease-in-out infinite}
+.utility-bar button{min-width:44px;min-height:44px}.utility-bar #help{width:auto;padding:0 10px;display:flex;gap:6px;font-size:14px}.utility-bar #help span{font-size:10px;white-space:nowrap}
+#ui[data-phase="briefing"] #help,#ui[data-phase="won"] #help,#ui[data-phase="lost"] #help{display:none}
+#help-screen{z-index:15;pointer-events:auto}.help-modal{width:430px;max-height:calc(100dvh - 32px);overflow-y:auto;border-radius:0;border:2px solid #a9c18b;box-shadow:5px 5px 0 #152e29}
+.help-modal h2{font-size:21px}.help-modal p{font-size:12px;line-height:1.9}.help-modal dl{display:grid;grid-template-columns:auto 1fr;gap:12px 14px;text-align:left;font-size:11px;margin:20px 0}.help-modal dt{font-weight:700}.help-modal dd{margin:0;color:#6b795b;line-height:1.6}.help-modal .text-button{min-height:44px;font-size:12px}
+@keyframes tutorial-glow{0%,100%{box-shadow:0 0 0 4px #f3d78018}50%{box-shadow:0 0 0 7px #f3d78044}}
+@keyframes guide-bob{0%,100%{transform:translateY(-3px)}50%{transform:translateY(3px)}}
+@media(max-width:1100px){.tutorial-window{left:15px;top:97px;width:254px;padding:14px}.utility-bar{bottom:124px}.utility-bar #help span{display:none}.plot-info{bottom:190px}.tutorial-window h2{font-size:16px}}
+@media(max-width:850px){.tutorial-window{left:10px;top:82px;width:235px;padding:12px}.tutorial-window h2{font-size:15px}.tutorial-window p{font-size:11px}.utility-bar{bottom:113px;flex-direction:row}.plot-info{bottom:176px;width:200px}.help-modal{padding:22px}.tool{min-height:44px;min-width:44px}}
+@media(max-width:640px){.tutorial-window{top:124px;width:225px}.utility-bar{bottom:112px}.utility-bar button{min-width:44px;min-height:44px}.plot-info{bottom:176px}.portrait-hint{display:none}#ui[data-tutorial]:not([data-tutorial=""]) .world-status{display:none}.help-modal dl{grid-template-columns:1fr;gap:5px}.help-modal dd{margin-bottom:10px}}
+@media(max-height:580px) and (min-width:650px){.tutorial-window{top:72px;left:10px;width:222px;padding:10px}.tutorial-heading{font-size:9px}.tutorial-dots{margin:7px 0}.tutorial-window h2{font-size:13px;margin:6px 0}.tutorial-window p{font-size:10px;margin:6px 0;line-height:1.6}.tutorial-window .tutorial-feedback{font-size:9px;margin:6px 0}.tutorial-window .tutorial-instruction{font-size:10px;padding-top:7px}.tutorial-window .tutorial-clock{font-size:9px}.tutorial-window .text-button{margin:0;min-height:44px}.tutorial-window .primary-button{margin-top:7px;font-size:11px;min-height:44px}.tutorial-window #tutorial-reset-note{font-size:9px}.utility-bar{bottom:98px;right:10px;flex-direction:row}.plot-info{bottom:155px;width:188px}.tool-hint{display:none}.mission-brief{padding:14px 22px!important}.mission-brief h2{font-size:20px;margin:10px 0!important}.mission-brief .story{font-size:11px;margin:8px 0}.brief-objectives{padding:4px 0;margin:8px 0}.brief-objectives li{margin:7px 0;font-size:11px}.practice-note{margin:8px 0!important;font-size:10px!important}}
+@media(prefers-reduced-motion:reduce){.tutorial-highlight,.plot-guide b{animation:none!important}}
