@@ -150,7 +150,11 @@ export class Game {
   private processEvents() {
     for (const event of this.state.events.splice(0)) {
       this.audio.play(event.type);
-      if (event.plot !== undefined) this.world.burst(event.plot, event.type);
+      if (event.type === 'harvest') {
+        this.world.harvest(event.plot, event.kind);
+        this.hud.toast(`${CONFIG.crops[event.kind].name} 수확! → 보급 기지 보관함`, 2200);
+      }
+      else if (event.plot !== undefined) this.world.burst(event.plot, event.type);
       else if (event.type === 'drought') this.hud.drought();
       else if (event.type === 'deliver') this.world.burst(-1, 'deliver');
       else if (event.type === 'won') { for (let i = 0; i < 6; i++) this.world.burst(i, 'won'); }
@@ -178,6 +182,7 @@ export class Game {
       this.hudTime = 0;
     }
     this.world.render(this.state, dt, this.state.phase === 'intro' ? this.introTime : -1);
+    this.hud.positionCrops(this.state, this.world);
     this.frames++; this.fpsTime += dt;
     if (this.fpsTime >= 1) { this.fps = Math.round(this.frames / this.fpsTime); this.frames = 0; this.fpsTime = 0; }
     if (!this.hud.el('debug').hidden) this.hud.el('debug').textContent = `${this.fps} FPS · ${this.world.stats}`;

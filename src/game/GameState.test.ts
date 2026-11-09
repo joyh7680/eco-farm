@@ -6,6 +6,15 @@ function game() { const s = new GameState(); s.reset('playing'); return s; }
 function advance(s: GameState, seconds: number) { for (let t = 0; t < seconds - 0.0001; t += 0.05) s.update(0.05); }
 
 describe('farm simulation', () => {
+  it('keeps crop identity on harvest events after the plot is emptied and emits no harvest for dead crops', () => {
+    const s = game(); s.act(0, 'leaf'); s.act(1, 'bean'); s.act(2, 'leaf');
+    advance(s, 45.1); s.plots[2].crop!.dead = true;
+    s.events = [];
+    s.act(0, 'harvest'); s.act(1, 'harvest'); s.act(2, 'harvest');
+    expect(s.events).toEqual([{ type: 'harvest', plot: 0, kind: 'leaf' }, { type: 'harvest', plot: 1, kind: 'bean' }, { type: 'clear', plot: 2 }]);
+    expect(s.inventory.map(item => item.kind)).toEqual(['leaf', 'bean']);
+    expect(s.plots.slice(0, 3).every(plot => !plot.crop)).toBe(true);
+  });
   it('pays for real seeds and grows the two crops at different speeds', () => {
     const s = game(); s.act(0, 'leaf'); s.act(1, 'bean');
     expect(s.money).toBe(260); expect(s.plots[0].crop?.growth).toBe(0);

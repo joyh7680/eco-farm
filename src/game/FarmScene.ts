@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Crop, GameState } from './GameState';
+import type { CropKind } from './GameConfig';
 import { TUTORIAL_PLOT } from './Tutorial';
 
 const C = {
@@ -14,6 +15,20 @@ const coneGeo = new THREE.ConeGeometry(1, 1, 7);
 const rockGeo = new THREE.IcosahedronGeometry(1, 0);
 const sphereGeo = new THREE.SphereGeometry(1, 8, 6);
 const shadowGeo = new THREE.CircleGeometry(1, 12);
+const moonShape = new THREE.Shape();
+moonShape.absarc(0, 0, 0.16, Math.PI * 0.28, Math.PI * 1.72, false);
+moonShape.quadraticCurveTo(-0.05, 0, Math.cos(Math.PI * 0.28) * 0.16, Math.sin(Math.PI * 0.28) * 0.16);
+const moonGeo = new THREE.ShapeGeometry(moonShape);
+const starShape = new THREE.Shape();
+for (let i = 0; i < 10; i++) {
+  const angle = Math.PI / 2 + i * Math.PI / 5, radius = i % 2 ? 0.085 : 0.19;
+  if (i === 0) starShape.moveTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
+  else starShape.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
+}
+starShape.closePath();
+const starGeo = new THREE.ShapeGeometry(starShape);
+const moonMaterial = new THREE.MeshBasicMaterial({ color: '#fff8c1', side: THREE.DoubleSide });
+const starMaterial = new THREE.MeshBasicMaterial({ color: '#ffe49b', side: THREE.DoubleSide });
 const shadowMaterial = new THREE.MeshBasicMaterial({ color: '#173e2b', transparent: true, opacity: 0.16, depthWrite: false });
 const materials = new Map<string, THREE.MeshLambertMaterial>();
 function mat(color: string) {
@@ -35,6 +50,31 @@ function orb(parent: THREE.Object3D, color: string | THREE.Material, x: number, 
 }
 function group(parent: THREE.Object3D, x: number, y: number, z: number) {
   const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g;
+}
+// The same silhouettes appear in the soil and in the harvest flight.
+function cropPlant(parent: THREE.Object3D, kind: CropKind, material: THREE.MeshLambertMaterial, x: number, z: number) {
+  const plant = group(parent, x, 0, z);
+  if (kind === 'leaf') {
+    for (let k = 0; k < 7; k++) {
+      const angle = k * Math.PI * 2 / 7;
+      const petal = orb(plant, material, Math.cos(angle) * 0.23, 0.22, Math.sin(angle) * 0.23, 0.32, 0.19, 0.25);
+      petal.rotation.set(Math.sin(angle) * 0.25, angle, -Math.cos(angle) * 0.25);
+    }
+    orb(plant, '#bceac3', 0, 0.35, 0, 0.29, 0.25, 0.29);
+    orb(plant, '#e3f6ce', 0, 0.48, 0, 0.18, 0.15, 0.18);
+    mesh(plant, moonGeo, moonMaterial, 0, 0.73, 0, 1, 1, 1).rotation.y = Math.PI / 4;
+  } else {
+    cylinder(plant, '#baa37a', 0.04, 0.79, -0.06, 0.035, 1.58);
+    cylinder(plant, '#487c71', -0.03, 0.7, 0, 0.055, 1.4);
+    for (let k = 0; k < 4; k++) {
+      const side = k % 2 ? -1 : 1, y = 0.35 + k * 0.26;
+      const lv = orb(plant, material, side * 0.2, y, -0.03, 0.25, 0.11, 0.18); lv.rotation.z = side * 0.3;
+      const pod = orb(plant, '#a58ad5', side * 0.22, y - 0.07, 0.17, 0.11, 0.24, 0.1); pod.rotation.z = side * 0.25;
+      for (let n = 0; n < 3; n++) orb(plant, '#d9c9f4', side * 0.22, y - 0.2 + n * 0.12, 0.245, 0.065);
+    }
+    mesh(plant, starGeo, starMaterial, 0, 1.65, 0, 1, 1, 1).rotation.y = Math.PI / 4;
+  }
+  return plant;
 }
 // Bake stationary meshes by shared material. Detailed scenery remains cheap to render.
 function bake(root: THREE.Object3D, exclude: THREE.Object3D[] = []) {
@@ -92,6 +132,7 @@ interface PlotVisual {
   leafMaterial: THREE.MeshLambertMaterial; beanMaterial: THREE.MeshLambertMaterial;
 }
 interface Particle { active: boolean; x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; max: number; color: THREE.Color; size: number }
+interface HarvestFlight { root: THREE.Group; start: THREE.Vector3; control: THREE.Vector3; age: number; duration: number; kind: CropKind }
 
 export class FarmScene {
   readonly scene = new THREE.Scene();
@@ -113,6 +154,11 @@ export class FarmScene {
   private dummy = new THREE.Object3D();
   private waterLevel: THREE.Mesh;
   private beacon: THREE.Mesh;
+  private harvestTemplates: Record<CropKind, THREE.Group>;
+  private harvestFlights: HarvestFlight[] = [];
+  private supplyIntake = new THREE.Vector3(9.6, 1.38, 1.9);
+  private supplyPulse: THREE.Mesh;
+  private supplyPulseTime = 0;
   private dryBlend = 0;
   private elapsed = 0;
   private height = 360;
@@ -120,8 +166,8 @@ export class FarmScene {
   private highQuality = false;
   private readyColor = new THREE.Color('#e9cd69');
   private dryColor = new THREE.Color('#a69a59');
-  private leafColor = new THREE.Color(C.leaf);
-  private beanColor = new THREE.Color('#66934f');
+  private leafColor = new THREE.Color('#79c5a1');
+  private beanColor = new THREE.Color('#537f92');
   private wiltColor = new THREE.Color('#b6a35a');
   private deadColor = new THREE.Color('#746345');
   private warningColor = new THREE.Color('#e69a5a');
@@ -150,13 +196,20 @@ export class FarmScene {
     this.landingPad(7.4, -7.2);
     this.greenhouse(-6.9, 7.1);
     this.plots = this.makePlots();
+    this.harvestTemplates = { leaf: new THREE.Group(), bean: new THREE.Group() };
+    for (const kind of ['leaf', 'bean'] as const) {
+      cropPlant(this.harvestTemplates[kind], kind, mat(kind === 'leaf' ? '#79c5a1' : '#537f92'), 0, 0);
+      bake(this.harvestTemplates[kind]);
+    }
+    this.supplyPulse = mesh(this.scene, new THREE.RingGeometry(0.5, 0.6, 24), new THREE.MeshBasicMaterial({ color: '#d9f4bd', transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }), 9.6, 1.4, 2.02, 1, 1, 1);
+    this.supplyPulse.rotation.y = Math.PI / 4;
     this.beacon = orb(this.scene, '#e8bb5a', 10, 2.7, 1.2, 0.18);
     this.decorations();
     this.plots.forEach(p => {
       bake(p.leaf); bake(p.bean); bake(p.seeds); bake(p.highlight);
       bake(p.root, [p.leaf, p.bean, p.seeds, p.highlight, p.marker, p.soil, ...this.targets]);
     });
-    bake(this.scene, [this.ship, this.waterLevel, this.beacon, ...this.plots.map(p => p.root), ...this.targets]);
+    bake(this.scene, [this.ship, this.waterLevel, this.beacon, this.supplyPulse, ...this.plots.map(p => p.root), ...this.targets]);
     this.planet = this.makeSpace();
     this.travelShip = this.spaceship(this.space, -4, -2, 3);
     this.travelShip.scale.setScalar(0.28); this.travelShip.rotation.z = -0.55;
@@ -340,27 +393,12 @@ export class FarmScene {
       }
       highlight.visible = false;
       const seeds = group(root, 0, 0, 0), leaf = group(root, 0, 0.26, 0), bean = group(root, 0, 0.26, 0);
-      const leafMaterial = mat(C.leaf).clone(), beanMaterial = mat('#66934f').clone();
+      const leafMaterial = mat('#79c5a1').clone(), beanMaterial = mat('#537f92').clone();
       for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
         const px = (a - 1) * 0.98, pz = (b - 1) * 0.92;
         orb(seeds, '#dac28a', px, 0.33, pz, 0.09, 0.065, 0.09);
-        const l = group(leaf, px, 0, pz);
-        cylinder(l, '#719044', 0, 0.18, 0, 0.07, 0.35);
-        for (let k = 0; k < 5; k++) {
-          const angle = k * Math.PI * 2 / 5;
-          const petal = orb(l, leafMaterial, Math.cos(angle) * 0.21, 0.28, Math.sin(angle) * 0.21, 0.28, 0.4, 0.21);
-          petal.rotation.z = -Math.cos(angle) * 0.45; petal.rotation.x = Math.sin(angle) * 0.45;
-        }
-        orb(l, '#afd264', 0, 0.41, 0, 0.22, 0.32, 0.22);
-        const bplant = group(bean, px, 0, pz);
-        cylinder(bplant, '#8c9260', 0, 0.64, 0, 0.035, 1.28);
-        for (let k = 0; k < 4; k++) {
-          const angle = k * 2.3;
-          const lv = orb(bplant, beanMaterial, Math.cos(angle) * 0.17, 0.27 + k * 0.25, Math.sin(angle) * 0.17, 0.27, 0.13, 0.2);
-          lv.rotation.z = 0.3;
-          orb(bplant, '#c4b65b', Math.cos(angle + 0.5) * 0.2, 0.28 + k * 0.21, Math.sin(angle + 0.5) * 0.2, 0.07, 0.2, 0.07);
-        }
-        orb(bplant, C.pink, 0, 1.28, 0, 0.11);
+        cropPlant(leaf, 'leaf', leafMaterial, px, pz);
+        cropPlant(bean, 'bean', beanMaterial, px, pz);
       }
       const marker = mesh(root, coneGeo, '#f6d57e', 0, 2.15, 0, 0.17, 0.3, 0.17);
       marker.material = (marker.material as THREE.MeshLambertMaterial).clone();
@@ -497,6 +535,57 @@ export class FarmScene {
     return { x: (position.x + 1) * window.innerWidth / 2, y: (1 - position.y) * window.innerHeight / 2 };
   }
 
+  projectCrop(id: number, kind: CropKind) {
+    const position = this.plots[id].root.position.clone();
+    position.y += kind === 'bean' ? 2.25 : 1.35;
+    return this.projectPosition(position);
+  }
+
+  projectSupply() { return this.projectPosition(new THREE.Vector3(9.6, 3.05, 1.2)); }
+
+  private projectPosition(position: THREE.Vector3) {
+    position.project(this.camera);
+    return { x: (position.x + 1) * window.innerWidth / 2, y: (1 - position.y) * window.innerHeight / 2 };
+  }
+
+  harvest(id: number, kind: CropKind) {
+    const origin = this.plots[id].root.position;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    for (let i = 0; i < (reduced ? 1 : 9); i++) {
+      const root = group(this.scene, 0, 0, 0);
+      root.add(this.harvestTemplates[kind].clone(true));
+      const start = new THREE.Vector3(origin.x + (i % 3 - 1) * 0.98, origin.y + 0.26, origin.z + (Math.floor(i / 3) - 1) * 0.92);
+      const control = start.clone().lerp(this.supplyIntake, 0.45); control.y += 4 + (i % 3) * 0.3;
+      root.position.copy(start); root.visible = !reduced;
+      // Shared primitives/materials keep repeated and simultaneous harvests bounded.
+      if (!reduced) for (let j = 0; j < 3; j++) orb(root, kind === 'leaf' ? moonMaterial : starMaterial, -0.14 * j, 0.3, 0.15 * j, 0.07 - j * 0.015);
+      this.harvestFlights.push({ root, start, control, age: -i * 0.045, duration: reduced ? 0.18 : 1.05, kind });
+    }
+    this.burst(id, 'harvest');
+  }
+
+  private updateHarvest(dt: number) {
+    for (let i = this.harvestFlights.length - 1; i >= 0; i--) {
+      const flight = this.harvestFlights[i]; flight.age += dt;
+      const t = THREE.MathUtils.clamp(flight.age / flight.duration, 0, 1);
+      const u = t * t;
+      flight.root.position.copy(flight.start).multiplyScalar((1 - u) ** 2)
+        .addScaledVector(flight.control, 2 * (1 - u) * u).addScaledVector(this.supplyIntake, u * u);
+      flight.root.rotation.set(0, t * 2, -Math.sin(t * Math.PI) * 0.45);
+      flight.root.scale.setScalar((1 + Math.sin(t * Math.PI) * 0.2) * Math.min(1, (1 - t) * 5));
+      if (t >= 1) {
+        flight.root.removeFromParent(); this.harvestFlights.splice(i, 1);
+        this.supplyPulseTime = 0.45;
+        (this.supplyPulse.material as THREE.MeshBasicMaterial).color.set(flight.kind === 'leaf' ? '#c6f8d5' : '#dfcbff');
+      }
+    }
+    this.supplyPulseTime = Math.max(0, this.supplyPulseTime - dt);
+    (this.supplyPulse.material as THREE.MeshBasicMaterial).opacity = this.supplyPulseTime * 1.8;
+    this.supplyPulse.scale.setScalar(1 + (1 - this.supplyPulseTime / 0.45) * 2.5);
+  }
+
+  get harvestInFlight() { return this.harvestFlights.length; }
+
   burst(id: number, kind: string) {
     const origin = id >= 0 ? this.plots[id].root.position : kind === 'land' ? this.ship.position : new THREE.Vector3(9.6, 1, 1.2);
     const n = kind === 'water' ? 24 : kind === 'won' ? 80 : 22;
@@ -530,12 +619,13 @@ export class FarmScene {
     v.leafMaterial.color.copy(this.leafColor).lerp(crop.dead ? this.deadColor : this.wiltColor, wilt);
     v.beanMaterial.color.copy(this.beanColor).lerp(crop.dead ? this.deadColor : this.wiltColor, wilt);
     (v.soil.material as THREE.MeshLambertMaterial).color.set(crop.moisture > 50 ? '#514334' : crop.moisture < 15 ? '#a88b59' : C.soil);
-    v.marker.position.y = 1.95 + Math.sin(t * 3) * 0.13;
+    v.marker.position.y = (crop.kind === 'bean' ? 2.15 : 1.25) + Math.sin(t * 3) * 0.13;
     (v.marker.material as THREE.MeshLambertMaterial).color.copy(crop.moisture < 15 || crop.dead ? this.warningColor : this.readyColor);
   }
 
   render(state: GameState, dt: number, introTime = -1) {
     this.elapsed += dt;
+    this.updateHarvest(state.phase === 'playing' ? dt : 0);
     this.dryBlend += ((state.drought ? 1 : 0) - this.dryBlend) * Math.min(1, dt * 0.8);
     this.groundMaterial.color.set('#ffffff').lerp(this.dryColor, this.dryBlend * 0.45);
     this.sun.color.set('#fff1d0').lerp(this.drySunColor, this.dryBlend);
@@ -580,6 +670,10 @@ export class FarmScene {
     }
   }
 
-  resetEffects() { this.particles.forEach(p => { p.active = false; }); this.dryBlend = 0; }
+  resetEffects() {
+    this.particles.forEach(p => { p.active = false; }); this.dryBlend = 0;
+    this.harvestFlights.forEach(flight => flight.root.removeFromParent()); this.harvestFlights = [];
+    this.supplyPulseTime = 0;
+  }
   get stats() { return `${this.width} × ${this.height} · ${this.renderer.info.render.calls} calls · ${this.renderer.info.render.triangles.toLocaleString()} tris`; }
 }

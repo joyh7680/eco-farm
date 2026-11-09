@@ -46,3 +46,41 @@
 @media(max-width:640px){.tutorial-window{top:124px;width:225px}.utility-bar{bottom:112px}.utility-bar button{min-width:44px;min-height:44px}.plot-info{bottom:176px}.portrait-hint{display:none}#ui[data-tutorial]:not([data-tutorial=""]) .world-status{display:none}.help-modal dl{grid-template-columns:1fr;gap:5px}.help-modal dd{margin-bottom:10px}}
 @media(max-height:580px) and (min-width:650px){.tutorial-window{top:72px;left:10px;width:222px;padding:10px}.tutorial-heading{font-size:9px}.tutorial-dots{margin:7px 0}.tutorial-window h2{font-size:13px;margin:6px 0}.tutorial-window p{font-size:10px;margin:6px 0;line-height:1.6}.tutorial-window .tutorial-feedback{font-size:9px;margin:6px 0}.tutorial-window .tutorial-instruction{font-size:10px;padding-top:7px}.tutorial-window .tutorial-clock{font-size:9px}.tutorial-window .text-button{margin:0;min-height:44px}.tutorial-window .primary-button{margin-top:7px;font-size:11px;min-height:44px}.tutorial-window #tutorial-reset-note{font-size:9px}.utility-bar{bottom:98px;right:10px;flex-direction:row}.plot-info{bottom:155px;width:188px}.tool-hint{display:none}.mission-brief{padding:14px 22px!important}.mission-brief h2{font-size:20px;margin:10px 0!important}.mission-brief .story{font-size:11px;margin:8px 0}.brief-objectives{padding:4px 0;margin:8px 0}.brief-objectives li{margin:7px 0;font-size:11px}.practice-note{margin:8px 0!important;font-size:10px!important}}
 @media(prefers-reduced-motion:reduce){.tutorial-highlight,.plot-guide b{animation:none!important}}
+
+/* Crop identity is shared by field labels, tools, inspector, and stored produce. */
+.tool[data-tool="leaf"]{background:#cce3ce;border-color:#91bda1}
+.tool[data-tool="bean"]{background:#e1d5eb;border-color:#b29acb}
+.tool[data-tool="leaf"].active{background:#b6ddc5;border-color:#3a8265;box-shadow:inset 0 0 0 2px #eef8de}
+.tool[data-tool="bean"].active{background:#d2bfe9;border-color:#8061a7;box-shadow:inset 0 0 0 2px #f7edff}
+.crop-cargo{display:flex;flex-direction:column;gap:3px;min-width:115px}
+.crop-cargo>span{display:flex;align-items:center;gap:5px;font-size:10px;white-space:nowrap;color:#cef0d5}
+.crop-cargo>span[data-crop="bean"]{color:#e1cef6}
+.crop-cargo .icon{width:19px;height:19px}.crop-cargo b{margin-left:auto;font:700 12px var(--mono)}
+.cargo-resource small{white-space:nowrap;font-size:9px}
+.crop-portrait{display:grid;place-items:center;width:34px;height:34px;background:#9ed7b320;border:1px solid #96d4b16b;border-radius:4px}
+.crop-portrait:empty{display:none}.crop-portrait .icon{width:29px;height:29px}
+.plot-info[data-crop="leaf"]{border-color:#98d0ac}.plot-info[data-crop="bean"]{border-color:#c2a5e7}
+.plot-info[data-crop="bean"] .crop-portrait{background:#c1a2e52b;border-color:#c2a5e780}
+.crop-identity{font-size:10px;color:#bbdbbf;margin:8px 0 0;line-height:1.5}
+.plot-info[data-crop="bean"] .crop-identity{color:#d7c3f0}
+.plot-info[data-crop="bean"] #growth-meter{background:#b99bdb}
+.crop-labels{position:absolute;inset:0;pointer-events:none;z-index:2}
+.crop-leaders{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}.crop-leaders line{stroke-width:1.5;opacity:.8}
+.crop-label{position:absolute;transform:translate(-50%,-100%);display:flex;align-items:center;gap:6px;padding:5px 8px 5px 5px;background:#173e35f5;border:1px solid #99dab7;border-radius:4px;box-shadow:0 3px 0 #15372b66;color:#e5f8dd;white-space:nowrap}
+.crop-label:after{content:'';position:absolute;top:100%;left:calc(50% - 4px);border:4px solid transparent;border-top-color:#99dab7}
+.crop-label[data-crop="bean"]{background:#342e4bf5;border-color:#cbb2ee;color:#f1e7ff}
+.crop-label[data-crop="bean"]:after{border-top-color:#cbb2ee}
+.crop-label .icon{width:28px;height:28px}.crop-label b{font-size:12px;line-height:1.4;display:block;letter-spacing:-.3px}
+.crop-label small{display:block;font-size:9px;line-height:1.5;color:#b6cbb2}
+.crop-label[data-crop="bean"] small{color:#d5c4e9}
+.crop-label.ready{border-width:2px;box-shadow:0 0 0 3px #d8efb226,0 3px 0 #15372b66}
+.crop-label.ready small{color:#fff0a9;font-weight:700}
+.crop-label.warning{border-color:#edb082}.crop-label.warning small{color:#f8be90}
+.supply-label{position:absolute;display:flex;align-items:center;gap:5px;transform:translate(-50%,-100%);padding:5px 8px;background:#273e32ed;border:1px solid #cbb77b;border-radius:3px;white-space:nowrap;z-index:2}
+.supply-label .icon{width:24px;height:24px}.supply-label span{font-size:11px;font-weight:700}.supply-label small{display:block;font-size:8px;font-weight:400;color:#d8ceaa;margin-top:2px}
+.supply-label.receiving{background:#3e6246;border-color:#eff8bb;box-shadow:0 0 18px #dbf5aa66}
+@media(max-width:1100px){.crop-cargo>span{font-size:9px}.crop-cargo .icon{width:16px;height:16px}.crop-cargo{min-width:104px}.crop-label b{font-size:11px}.crop-label .icon{width:24px;height:24px}.crop-label{gap:4px;padding:4px 6px 4px 4px}.plot-title{gap:5px}.plot-title b{font-size:12px}.crop-portrait{width:28px;height:28px}.crop-portrait .icon{width:25px;height:25px}}
+@media(max-width:850px){.crop-label b{font-size:10px}.crop-label small{font-size:8px}.crop-label .icon{width:22px;height:22px}.cargo-resource small{font-size:8px}.crop-cargo b{font-size:11px}.supply-label span{font-size:10px}.supply-label small{font-size:7px}}
+@media(max-width:640px){.crop-label{gap:3px;padding:3px 5px 3px 3px}.crop-label b{font-size:9px}.crop-label small{font-size:7px}.crop-label .icon{width:19px;height:19px}.crop-cargo>span{font-size:8px}.crop-cargo{min-width:99px;gap:1px}.supply-label{padding:4px}.supply-label .icon{width:19px;height:19px}}
+@media(max-width:640px){.brand{flex:1 0 calc(100% - 120px)}.brand b{white-space:nowrap}.time-resource{flex:0 0 auto}.resource-group{flex:0 0 100%;gap:12px}.top-hud{row-gap:7px}.cargo-resource small{font-size:7px}}
+@media(max-height:580px) and (min-width:650px){.plot-info{padding:10px}.plot-info .crop-portrait{width:24px;height:24px}.plot-info .crop-portrait .icon{width:22px;height:22px}.plot-info .crop-identity{font-size:9px;margin-top:5px}.plot-info #crop-details{margin-top:8px}.plot-info .plot-meter{margin:6px 0}.plot-info .context-button{margin-top:6px;padding-top:7px;min-height:28px}}

@@ -1,5 +1,6 @@
 import { CONFIG, type Action } from '../game/GameConfig';
 import type { GameState } from '../game/GameState';
+import type { FarmScene } from '../game/FarmScene';
 import { icon } from './icons';
 import { TUTORIAL } from '../game/Tutorial';
 
@@ -37,7 +38,7 @@ export class GameHUD {
         <div class="resource-group">
           <div class="resource water-resource">${icon('drop')}<div><small>물 보유량</small><strong><span id="water">100</span><em> / 100</em></strong></div><div class="resource-track"><i id="water-meter"></i></div></div>
           <div class="resource">${icon('coin')}<div><small>보유 자금</small><strong><span id="money">300</span><em> G</em></strong></div></div>
-          <div class="resource cargo-resource">${icon('delivery')}<div><small>수확물</small><strong><span id="inventory">0</span><em> 개</em></strong></div></div>
+          <div class="resource cargo-resource"><div><small>보급 기지 보관함 · <span id="inventory">0</span>개</small><div class="crop-cargo"><span data-crop="leaf">${icon('leaf')}달빛 상추 <b id="inventory-leaf">0</b></span><span data-crop="bean">${icon('bean')}별빛 콩 <b id="inventory-bean">0</b></span></div></div></div>
         </div>
         <div class="time-resource"><span class="live-dot"></span><div><small>남은 임무 시간</small><strong id="timer">08:00</strong></div></div>
       </header>
@@ -57,7 +58,8 @@ export class GameHUD {
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
       <aside class="plot-info play-only" id="plot-info" hidden>
-        <div class="plot-title"><span id="plot-number">PLOT 01</span><b id="crop-name">빈 밭</b><span id="crop-status" class="state-pill">파종 가능</span></div>
+        <div class="plot-title"><span id="plot-number">PLOT 01</span><span class="crop-portrait" id="crop-portrait" aria-hidden="true"></span><b id="crop-name">빈 밭</b><span id="crop-status" class="state-pill">파종 가능</span></div>
+        <p class="crop-identity" id="crop-identity" hidden></p>
         <div id="crop-details"><div class="plot-meter"><span>성장</span><div><i id="growth-meter"></i></div><b id="growth-value">0%</b></div><div class="plot-meter moisture"><span>수분</span><div><i id="moisture-meter"></i></div><b id="moisture-value">0%</b></div></div>
         <button id="apply-action" class="context-button">선택한 도구 사용 ↗</button>
       </aside>
@@ -99,6 +101,8 @@ export class GameHUD {
         <button class="text-button" id="end-practice">연습 건너뛰고 임무 시작</button>
       </aside>
       <div class="plot-guide" id="plot-guide" aria-hidden="true" hidden><span id="plot-guide-text">1번 밭</span><b>▼</b></div>
+      <div class="crop-labels play-only" id="crop-labels"><svg class="crop-leaders" aria-hidden="true"><line id="supply-leader" visibility="hidden"/>${Array.from({ length: 6 }, (_, i) => `<line id="crop-leader-${i}" stroke="#bce5c5" visibility="hidden"/>`).join('')}</svg>${Array.from({ length: 6 }, (_, i) => `<div class="crop-label" id="crop-label-${i}" hidden><span class="crop-label-icon"></span><div><b id="crop-label-name-${i}"></b><small id="crop-label-state-${i}"></small></div></div>`).join('')}</div>
+      <div class="supply-label play-only" id="supply-label">${icon('delivery')}<span>보급 기지<small>수확물 보관 → 납품</small></span></div>
 
       <section class="overlay modal-overlay" id="help-screen" role="dialog" aria-modal="true" aria-labelledby="help-title" hidden>
         <div class="modal help-modal"><span class="eyebrow">FARM FIELD GUIDE</span><h2 id="help-title" tabindex="-1">게임 방법 / 튜토리얼</h2>
@@ -169,11 +173,67 @@ export class GameHUD {
     this.el('plot-guide').style.top = `${position.y - 48}px`;
   }
 
+  positionCrops(state: GameState, world: FarmScene) {
+    const supply = world.projectSupply();
+    const supplyLabel = this.el('supply-label');
+    supplyLabel.style.left = `${supply.x}px`; supplyLabel.style.top = `${supply.y}px`;
+    supplyLabel.classList.toggle('receiving', world.harvestInFlight > 0);
+    if (!['playing', 'paused'].includes(state.phase)) return;
+    // Pack projected labels without covering one another, even on a narrow phone.
+    const occupied = [...this.root.querySelectorAll<HTMLElement>('.top-hud, .mission-widget, .tutorial-window, .plot-info, .bottom-hud, .utility-bar')]
+      .filter(el => el.getClientRects().length > 0).map(el => el.getBoundingClientRect());
+    const labels = state.plots.map(plot => {
+      const el = this.el(`crop-label-${plot.id}`), line = this.el(`crop-leader-${plot.id}`);
+      line.setAttribute('visibility', 'hidden');
+      return { el, line, crop: plot.crop, anchor: plot.crop ? world.projectCrop(plot.id, plot.crop.kind) : null, size: el.getBoundingClientRect() };
+    }).filter(label => label.crop && !label.el.hidden).sort((a, b) => a.anchor!.y - b.anchor!.y);
+    const supplyLine = this.el('supply-leader'); supplyLine.setAttribute('visibility', 'hidden');
+    labels.unshift({ el: supplyLabel, line: supplyLine, crop: null, anchor: supply, size: supplyLabel.getBoundingClientRect() });
+    for (const label of labels) {
+      const { el, line, size } = label, anchor = label.anchor!;
+      let best = { left: anchor.x - size.width / 2, top: anchor.y - size.height, score: Infinity };
+      for (const row of [0, -1, 1, -2, 2, -3, 3, -4, 4]) for (const column of [0, -1, 1, -2, 2]) {
+        const left = Math.max(8, Math.min(innerWidth - size.width - 8, anchor.x - size.width / 2 + column * (size.width + 6)));
+        const top = Math.max(8, Math.min(innerHeight - size.height - 8, anchor.y - size.height + row * (size.height + 6)));
+        const right = left + size.width, bottom = top + size.height;
+        const collisions = occupied.filter(rect => left < rect.right + 4 && right + 4 > rect.left && top < rect.bottom + 4 && bottom + 4 > rect.top).length;
+        const score = collisions * 100000 + (left + size.width / 2 - anchor.x) ** 2 + (bottom - anchor.y) ** 2;
+        if (score < best.score) best = { left, top, score };
+      }
+      el.style.left = `${best.left + size.width / 2}px`; el.style.top = `${best.top + size.height}px`;
+      occupied.push(new DOMRect(best.left, best.top, size.width, size.height));
+      const bottom = best.top + size.height;
+      if (Math.abs(bottom - anchor.y) > 5 || Math.abs(best.left + size.width / 2 - anchor.x) > 5) {
+        line.setAttribute('x1', String(best.left + size.width / 2)); line.setAttribute('y1', String(bottom));
+        line.setAttribute('x2', String(anchor.x)); line.setAttribute('y2', String(anchor.y + 8));
+        line.setAttribute('stroke', !label.crop ? '#d4bd88' : label.crop.kind === 'leaf' ? '#bce5c5' : '#d2b9ef');
+        line.setAttribute('visibility', 'visible');
+      }
+    }
+  }
+
+  private cropLabels(state: GameState) {
+    for (const plot of state.plots) {
+      const label = this.el(`crop-label-${plot.id}`), crop = plot.crop;
+      label.hidden = !crop;
+      if (!crop) continue;
+      if (label.dataset.crop !== crop.kind) {
+        label.dataset.crop = crop.kind;
+        label.querySelector('.crop-label-icon')!.innerHTML = icon(crop.kind);
+      }
+      const ready = crop.growth >= 1 && !crop.dead;
+      label.classList.toggle('ready', ready);
+      label.classList.toggle('warning', crop.dead || crop.moisture < 15);
+      this.set(`crop-label-name-${plot.id}`, CONFIG.crops[crop.kind].name);
+      this.set(`crop-label-state-${plot.id}`, `${plot.id + 1}번 밭 · ${crop.dead ? '고사 · 정리 필요' : ready ? '✓ 수확 가능' : crop.moisture < 15 ? '물 부족' : `성장 ${Math.floor(crop.growth * 100)}%`}`);
+    }
+  }
+
   private tutorial(state: GameState) {
     const step = state.tutorial;
     this.root.dataset.tutorial = step ?? '';
     this.el('tutorial-window').hidden = !step;
-    this.el('plot-guide').hidden = !step || ['deliver', 'complete'].includes(step) || state.phase !== 'playing';
+    this.el('plot-guide').hidden = !step || ['grow', 'harvest', 'deliver', 'complete'].includes(step) || state.phase !== 'playing';
     const key = `${step}:${state.tutorialToolReady}:${state.phase}`;
     if (key === this.lastTutorial) return;
     this.lastTutorial = key;
@@ -213,9 +273,12 @@ export class GameHUD {
     }
     this.el('pause-screen').hidden = state.phase !== 'paused' || this.helpOpen;
     this.tutorial(state);
+    this.cropLabels(state);
     this.set('mission-status', state.tutorial ? '연습 중' : '진행 중');
     this.set('water', String(state.water)); this.meter('water-meter', state.water);
     this.set('money', String(state.money)); this.set('inventory', String(state.inventory.length));
+    this.set('inventory-leaf', String(state.inventory.filter(item => item.kind === 'leaf').length));
+    this.set('inventory-bean', String(state.inventory.filter(item => item.kind === 'bean').length));
     const seconds = Math.ceil(state.remaining);
     this.set('timer', `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`);
     this.el('timer').classList.toggle('urgent', seconds < 60);
@@ -238,6 +301,12 @@ export class GameHUD {
       const crop = state.plots[state.selected].crop;
       this.set('plot-number', `PLOT 0${state.selected + 1}`);
       this.set('crop-name', crop ? CONFIG.crops[crop.kind].name : '빈 밭');
+      const portrait = this.el('crop-portrait');
+      const kind = crop?.kind ?? '';
+      if (portrait.dataset.crop !== kind) { portrait.dataset.crop = kind; portrait.innerHTML = crop ? icon(crop.kind) : ''; }
+      this.el('plot-info').dataset.crop = kind;
+      this.el('crop-identity').hidden = !crop;
+      this.set('crop-identity', crop?.kind === 'leaf' ? '초승달 · 둥근 민트빛 상추' : '별 · 보랏빛 꼬투리 콩');
       this.el('crop-details').hidden = !crop;
       this.set('crop-status', !crop ? '파종 가능' : crop.dead ? '고사 · 정리 필요' : crop.moisture < 15 ? '물 부족' : crop.growth >= 1 ? '수확 가능' : crop.growth < 0.13 ? '씨앗' : crop.growth < 0.4 ? '새싹' : '자라는 중');
       this.el('crop-status').classList.toggle('warning', !!crop && (crop.moisture < 15 || crop.dead));
@@ -245,7 +314,7 @@ export class GameHUD {
         this.meter('growth-meter', crop.growth * 100); this.meter('moisture-meter', crop.moisture);
         this.set('growth-value', `${Math.floor(crop.growth * 100)}%`); this.set('moisture-value', `${Math.floor(crop.moisture)}%`);
       }
-      this.set('apply-action', crop?.dead ? '마른 작물 정리하기 ↗' : crop?.growth === 1 ? '이 밭 수확하기 ↗' : crop ? '이 밭에 물주기 −10 ↗' : `${CONFIG.crops[state.action === 'bean' ? 'bean' : 'leaf'].name} 심기 ↗`);
+      this.set('apply-action', crop?.dead ? '마른 작물 정리하기 ↗' : crop?.growth === 1 ? `${CONFIG.crops[crop.kind].name} 수확 → 보급 기지 ↗` : crop ? '이 밭에 물주기 −10 ↗' : `${CONFIG.crops[state.action === 'bean' ? 'bean' : 'leaf'].name} 심기 ↗`);
     }
     if (this.toastUntil && performance.now() > this.toastUntil) { this.el('toast').classList.remove('visible'); this.toastUntil = 0; }
   }

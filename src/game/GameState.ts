@@ -7,7 +7,8 @@ export interface Crop {
 }
 export interface Produce { kind: CropKind; afterDrought: boolean }
 export interface Plot { id: number; crop: Crop | null }
-export type GameEvent = { type: 'plant' | 'water' | 'harvest' | 'clear'; plot: number } |
+export type GameEvent = { type: 'plant' | 'water' | 'clear'; plot: number } |
+  { type: 'harvest'; plot: number; kind: CropKind } |
   { type: 'drought' | 'deliver' | 'won' | 'lost'; plot?: never };
 
 export class GameState {
@@ -89,7 +90,7 @@ export class GameState {
         this.inventory.push({ kind: crop.kind, afterDrought: this.drought });
         this.harvested++;
         plot.crop = null;
-        this.events.push({ type: 'harvest', plot: id });
+        this.events.push({ type: 'harvest', plot: id, kind: crop.kind });
       }
     }
     if (this.tutorial === 'plant') this.nextTutorial('water');
