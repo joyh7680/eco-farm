@@ -2,14 +2,18 @@ import { GameState } from './GameState';
 import { FarmScene } from './FarmScene';
 import { GameAudio } from './Audio';
 import { GameHUD } from '../ui/GameHUD';
-import { CONFIG, type Action } from './GameConfig';
+import { CONFIG, type Action, type CropKind } from './GameConfig';
 import { TUTORIAL_PLOT } from './Tutorial';
+import { FARM_TARGETS, Player, type FarmTarget } from './Player';
 
 export class Game {
   readonly state = new GameState();
   readonly world: FarmScene;
   readonly hud: GameHUD;
   readonly audio = new GameAudio();
+  readonly player = new Player();
+  seed: CropKind = 'leaf';
+  get target() { return this.player.nearby(); }
   private lastTime = 0;
   private accumulator = 0;
   private introTime = 0;
@@ -35,28 +39,37 @@ export class Game {
     this.hud.onAction = action => this.selectTool(action);
     this.hud.onApply = () => this.applySelected();
     this.hud.onDeliver = () => this.deliver();
+    this.hud.onInteract = () => this.interact();
+    this.hud.onUse = action => this.interact(action === 'leaf' ? this.seed : action);
+    this.hud.onMove = (x, y) => this.player.stick(x, y);
     this.hud.onPause = () => this.pause();
     this.hud.onMute = () => { this.audio.muted = !this.audio.muted; this.hud.mute(this.audio.muted); };
     this.hud.onQuality = () => { const high = this.world.toggleQuality(); this.hud.el('quality').textContent = high ? 'HD' : 'SD'; };
     this.world.renderer.domElement.addEventListener('pointerdown', e => {
       if (this.state.phase !== 'playing' || e.button > 0) return;
       const target = this.world.hit(e.clientX, e.clientY);
-      if (target?.delivery) this.deliver();
-      else if (target?.plot !== undefined) {
-        const message = this.state.act(target.plot);
-        if (message) this.hud.toast(message);
-        this.processEvents(); this.hud.update(this.state);
-      } else if (!this.state.tutorial) { this.state.selected = -1; this.hud.update(this.state); }
+      const facility = target?.delivery ? FARM_TARGETS.find(t => t.kind === 'supply') : target?.tank ? FARM_TARGETS.find(t => t.kind === 'tank') : target?.plot !== undefined ? FARM_TARGETS[target.plot] : null;
+      if (facility) this.interact(undefined, facility);
     });
     this.world.renderer.domElement.addEventListener('pointermove', e => {
       if (this.state.phase !== 'playing') return;
-      this.world.renderer.domElement.style.cursor = this.world.hit(e.clientX, e.clientY) ? 'pointer' : 'default';
+      const hit = this.world.hit(e.clientX, e.clientY);
+      const target = hit?.plot !== undefined ? FARM_TARGETS[hit.plot] : hit?.delivery ? FARM_TARGETS[7] : hit?.tank ? FARM_TARGETS[6] : null;
+      this.world.renderer.domElement.style.cursor = target && this.player.inReach(target) ? 'pointer' : 'default';
     });
     window.addEventListener('resize', () => this.world.resize());
     // Autoplay is visual only; sound unlocks on the first real user interaction.
     document.addEventListener('pointerdown', () => this.audio.start(), { once: true, capture: true });
     document.addEventListener('keydown', () => this.audio.start(), { once: true, capture: true });
+    const movement = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight']);
+    window.addEventListener('keyup', e => this.player.key(e.code, false));
+    window.addEventListener('blur', () => this.clearInput());
     window.addEventListener('keydown', e => {
+      if (movement.has(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        if (this.state.phase === 'playing' && !this.hud.helpOpen) this.player.key(e.code, true);
+        return;
+      }
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.target instanceof HTMLButtonElement && ['Space', 'Enter'].includes(e.code)) return;
       if (this.hud.helpOpen) { if (e.code === 'Escape') { e.preventDefault(); this.closeHelp(); } return; }
@@ -65,9 +78,9 @@ export class Game {
       if (e.code === 'KeyQ') this.hud.onQuality();
       if (e.code === 'Space' || e.code === 'Escape') { e.preventDefault(); if (this.state.phase === 'intro') this.finishIntro(); else this.pause(); }
       if (this.state.phase !== 'playing') return;
-      const keys: Record<string, Action> = { Digit1: 'leaf', Digit2: 'bean', Digit3: 'water', Digit4: 'harvest' };
-      if (keys[e.code]) this.selectTool(keys[e.code]);
-      if (e.code === 'Digit5') this.deliver();
+      const keys: Record<string, Action> = { Digit1: this.seed, Digit2: 'water', Digit3: 'harvest' };
+      if (keys[e.code]) { e.preventDefault(); this.interact(keys[e.code]); }
+      if (e.code === 'KeyE') { e.preventDefault(); this.interact(); }
     });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.state.phase === 'playing') { this.hiddenPaused = true; this.pause(); }
@@ -80,6 +93,7 @@ export class Game {
 
   start() {
     this.state.reset('intro'); this.world.resetEffects();
+    this.resetPlayer();
     this.hud.resetTransient(); this.hiddenPaused = false; this.helpResume = false;
     this.introTime = 0; this.landed = false; this.accumulator = 0;
     this.hud.update(this.state);
@@ -94,12 +108,14 @@ export class Game {
   beginFarming() {
     if (this.state.phase !== 'briefing' && !this.state.tutorial) return;
     this.state.reset('playing'); this.world.resetEffects(); this.hud.resetTransient(); this.accumulator = 0;
+    this.resetPlayer();
     this.hud.update(this.state);
-    this.hud.toast('임무 시작! 물 100 · 300G · 가뭄까지 70초. 도구를 고른 뒤 밭을 눌러주세요.', 5000);
+    this.hud.toast('임무 시작! WASD / 조이스틱으로 이동 · 밭 근처에서 E / 행동 버튼. 물탱크에서 물을 채우세요.', 5000);
   }
 
   beginTutorial() {
     this.state.beginTutorial(); this.world.resetEffects(); this.hud.resetTransient();
+    this.resetPlayer();
     this.accumulator = 0; this.hiddenPaused = false; this.helpResume = false;
     this.hud.update(this.state);
   }
@@ -107,6 +123,7 @@ export class Game {
   openHelp() {
     if (this.hud.helpOpen || !['playing', 'paused'].includes(this.state.phase)) return;
     this.helpResume = this.state.phase === 'playing';
+    this.clearInput();
     this.state.phase = 'paused'; this.accumulator = 0;
     this.hud.showHelp(true); this.hud.update(this.state);
   }
@@ -119,6 +136,7 @@ export class Game {
 
   pause() {
     if (this.hud.helpOpen) return;
+    this.clearInput();
     if (this.state.phase === 'playing') this.state.phase = 'paused';
     else if (this.state.phase === 'paused') { this.state.phase = 'playing'; this.audio.start(); }
     this.accumulator = 0; this.hud.update(this.state);
@@ -128,22 +146,56 @@ export class Game {
     const message = this.state.selectTool(action);
     if (message) this.hud.toast(message);
     else this.audio.play('click');
+    if (!message && (action === 'leaf' || action === 'bean')) this.seed = action;
     this.hud.update(this.state);
   }
 
   applySelected() {
-    if (this.state.tutorial) return;
-    const plot = this.state.plots[this.state.selected]; if (!plot) return;
-    const action = plot.crop?.dead || plot.crop?.growth === 1 ? 'harvest' : plot.crop ? 'water' : this.state.action === 'bean' ? 'bean' : 'leaf';
-    const message = this.state.act(plot.id, action); if (message) this.hud.toast(message);
-    this.processEvents(); this.hud.update(this.state);
+    this.interact();
   }
 
   deliver() {
+    const target = FARM_TARGETS.find(t => t.kind === 'supply')!;
+    this.interact(undefined, target);
+  }
+
+  private clearInput() { this.player.clearInput(); this.hud.resetJoystick(); }
+  private resetPlayer() { this.player.reset(); this.seed = 'leaf'; this.hud.resetJoystick(); }
+
+  contextAction(target = this.target): Action | 'refill' | 'deliver' | null {
+    if (!target) return null;
+    if (target.kind === 'tank') return 'refill';
+    if (target.kind === 'supply') return 'deliver';
+    const crop = this.state.plots[target.id].crop;
+    if (this.state.tutorial === 'grow' && target.id === TUTORIAL_PLOT) return null;
+    return crop?.dead || crop?.growth === 1 ? 'harvest' : crop ? 'water' : this.seed;
+  }
+
+  interact(action?: Action, target = this.target) {
+    if (this.state.phase !== 'playing' || this.hud.helpOpen || this.player.actionTime > 0) return;
+    if (!target || !this.player.inReach(target)) { this.hud.toast('대상 가까이 이동하세요. WASD / 방향키 또는 왼쪽 조이스틱을 사용해요.', 2200); return; }
+    if (action && target.kind !== 'plot') { this.hud.toast('시설은 E 또는 큰 행동 버튼으로 이용하세요.'); return; }
+    const chosen = action ?? this.contextAction(target);
+    if (!chosen) return;
+    if (chosen === 'deliver') { this.deliverAtStation(target); return; }
+    if (chosen === 'refill') {
+      const message = this.state.refillWater();
+      if (message) this.hud.toast(message);
+      else { this.player.perform('refill', target); this.hud.toast(`물뿌리개 ${this.state.canWater}/${CONFIG.canCapacity} 충전 · 탱크 잔량 ${this.state.water - this.state.canWater}`); }
+    } else {
+      const selection = this.state.selectTool(chosen);
+      const message = selection ?? this.state.act(target.id, chosen);
+      if (message) this.hud.toast(message);
+      else this.player.perform(chosen, target);
+    }
+    this.processEvents(); this.hud.update(this.state);
+  }
+
+  private deliverAtStation(target: FarmTarget) {
     const amount = this.state.inventory.length;
     const message = this.state.deliver();
     if (message) this.hud.toast(message);
-    else if (amount) this.hud.toast(`보급 기지에 ${amount}개 납품 완료! 다음 초록을 키워보세요.`);
+    else if (amount) { this.player.perform('deliver', target); this.hud.toast(`보급 기지에 ${amount}개 납품 완료! 다음 초록을 키워보세요.`); }
     this.processEvents(); this.hud.update(this.state);
   }
 
@@ -157,6 +209,7 @@ export class Game {
       else if (event.plot !== undefined) this.world.burst(event.plot, event.type);
       else if (event.type === 'drought') this.hud.drought();
       else if (event.type === 'deliver') this.world.burst(-1, 'deliver');
+      else if (event.type === 'refill') this.world.refillEffect();
       else if (event.type === 'won') { for (let i = 0; i < 6; i++) this.world.burst(i, 'won'); }
     }
   }
@@ -171,6 +224,8 @@ export class Game {
       if (this.introTime >= CONFIG.introDuration) this.finishIntro();
     }
     if (this.state.phase === 'playing') {
+      this.player.update(dt);
+      this.state.selected = this.target?.kind === 'plot' ? this.target.id : -1;
       this.accumulator += dt;
       while (this.accumulator >= 0.05) { this.state.update(0.05); this.accumulator -= 0.05; }
       this.processEvents();
@@ -178,11 +233,14 @@ export class Game {
     this.hudTime += dt;
     if (this.hudTime >= 0.1) {
       this.hud.update(this.state);
-      if (this.state.tutorial) this.hud.positionGuide(this.world.projectPlot(TUTORIAL_PLOT));
+      this.hud.updateInteraction(this.state, this.target, this.contextAction(), this.seed, this.player.actionTime > 0);
+      if (this.state.tutorial) this.hud.positionGuide(this.state.tutorial === 'deliver' ? this.world.projectTarget(FARM_TARGETS[7]) : this.world.projectPlot(TUTORIAL_PLOT));
+      this.hud.positionCrops(this.state, this.world);
       this.hudTime = 0;
     }
+    this.world.updatePlayer(this.player, this.state.phase === 'playing' ? this.target : null);
     this.world.render(this.state, dt, this.state.phase === 'intro' ? this.introTime : -1);
-    this.hud.positionCrops(this.state, this.world);
+    this.hud.positionPlayer(this.world.projectPlayer(this.player));
     this.frames++; this.fpsTime += dt;
     if (this.fpsTime >= 1) { this.fps = Math.round(this.frames / this.fpsTime); this.frames = 0; this.fpsTime = 0; }
     if (!this.hud.el('debug').hidden) this.hud.el('debug').textContent = `${this.fps} FPS · ${this.world.stats}`;

@@ -9,12 +9,13 @@ export interface Produce { kind: CropKind; afterDrought: boolean }
 export interface Plot { id: number; crop: Crop | null }
 export type GameEvent = { type: 'plant' | 'water' | 'clear'; plot: number } |
   { type: 'harvest'; plot: number; kind: CropKind } |
-  { type: 'drought' | 'deliver' | 'won' | 'lost'; plot?: never };
+  { type: 'drought' | 'deliver' | 'refill' | 'won' | 'lost'; plot?: never };
 
 export class GameState {
   phase: Phase = 'menu';
   time = 0;
   water: number = CONFIG.startingWater;
+  canWater: number = CONFIG.startingCanWater;
   money: number = CONFIG.startingMoney;
   waterUsed = 0;
   harvested = 0;
@@ -60,7 +61,7 @@ export class GameState {
     const plot = this.plots[id];
     if (!plot) return null;
     if (this.tutorial && (id !== TUTORIAL_PLOT || action !== TUTORIAL[this.tutorial].action || !this.tutorialToolReady)) {
-      return '안내된 도구를 먼저 선택한 뒤 빛나는 1번 밭을 눌러주세요.';
+      return '안내된 도구를 먼저 선택하고 빛나는 1번 밭 가까이 이동해 행동하세요.';
     }
     this.selected = id;
     const crop = plot.crop;
@@ -75,7 +76,9 @@ export class GameState {
       if (!crop) return '먼저 이 밭에 씨앗을 심어주세요.';
       if (crop.dead) return '고사한 작물은 회복할 수 없어요. 밭을 정리하세요.';
       if (this.water < CONFIG.wateringCost) return '물탱크의 물이 부족해요.';
+      if (this.canWater < CONFIG.wateringCost) return '물뿌리개가 비었어요. 물탱크로 이동해 물을 채워주세요.';
       this.water -= CONFIG.wateringCost;
+      this.canWater -= CONFIG.wateringCost;
       this.waterUsed += CONFIG.wateringCost;
       crop.moisture = Math.min(100, crop.moisture + CONFIG.wateringAmount);
       crop.dryTime = 0;
@@ -97,6 +100,15 @@ export class GameState {
     else if (this.tutorial === 'water') this.nextTutorial('grow');
     else if (this.tutorial === 'harvest') this.nextTutorial('deliver');
     this.checkMission();
+    return null;
+  }
+
+  refillWater(): string | null {
+    if (this.phase !== 'playing') return null;
+    const amount = Math.min(CONFIG.canCapacity - this.canWater, this.water - this.canWater);
+    if (amount <= 0) return this.canWater >= CONFIG.canCapacity ? '물뿌리개가 이미 가득 찼어요.' : '물탱크에 남은 물이 없어요.';
+    this.canWater += amount;
+    this.events.push({ type: 'refill' });
     return null;
   }
 

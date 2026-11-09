@@ -84,3 +84,66 @@
 @media(max-width:640px){.crop-label{gap:3px;padding:3px 5px 3px 3px}.crop-label b{font-size:9px}.crop-label small{font-size:7px}.crop-label .icon{width:19px;height:19px}.crop-cargo>span{font-size:8px}.crop-cargo{min-width:99px;gap:1px}.supply-label{padding:4px}.supply-label .icon{width:19px;height:19px}}
 @media(max-width:640px){.brand{flex:1 0 calc(100% - 120px)}.brand b{white-space:nowrap}.time-resource{flex:0 0 auto}.resource-group{flex:0 0 100%;gap:12px}.top-hud{row-gap:7px}.cargo-resource small{font-size:7px}}
 @media(max-height:580px) and (min-width:650px){.plot-info{padding:10px}.plot-info .crop-portrait{width:24px;height:24px}.plot-info .crop-portrait .icon{width:22px;height:22px}.plot-info .crop-identity{font-size:9px;margin-top:5px}.plot-info #crop-details{margin-top:8px}.plot-info .plot-meter{margin:6px 0}.plot-info .context-button{margin-top:6px;padding-top:7px;min-height:28px}}
+
+/* Character controls sit at the edges, leaving the fixed quarter-view farm open. */
+html,body{overscroll-behavior:none;touch-action:none;user-select:none;-webkit-user-select:none}
+.world-caption,.map-label,.world-status{display:none}
+.top-hud{top:12px;left:16px;right:16px;min-height:64px;padding:10px 16px;background:#203e34df;box-shadow:none;border-radius:4px}
+.top-hud .brand{min-width:180px}.top-hud .brand b{font-size:22px}.top-hud .brand small{font-size:7px}
+.water-resource small{font-size:9px}.water-resource small b{font-weight:700;color:#b9eee3}
+.mission-widget{top:96px;left:16px;width:228px;padding:12px;background:#203e34df;color:#ecedce;border-color:#c6d8b34d;box-shadow:none}
+.mission-widget .eyebrow,.mission-widget .mission-status,.mission-widget .sub-objective{color:#c2d3b2}
+.mission-widget h2{font-size:15px;margin:8px 0 10px}.mission-widget .mission-progress{height:5px;margin:6px 0 9px}
+.bottom-hud{bottom:18px;left:50%;width:max-content;max-width:calc(100vw - 390px)}
+.bottom-hud .action-bar{padding:4px;gap:4px;border-radius:8px}.bottom-hud .toolbar-caption{display:none}
+.bottom-hud .tool{width:90px;height:72px;min-height:44px;border-radius:5px}.bottom-hud .tool .icon{height:28px;width:28px;margin-bottom:1px}
+.bottom-hud .tool b{font-size:10px}.bottom-hud .tool small{font-size:8px}
+.tool-hint{margin-bottom:10px;text-align:center}.tool-hint b{display:none}.tool-hint small{font-size:10px;line-height:1.7;white-space:nowrap}
+.movement-control{position:absolute;left:max(24px,env(safe-area-inset-left));bottom:max(20px,env(safe-area-inset-bottom));z-index:7;display:flex;align-items:center;flex-direction:column;gap:10px}
+.movement-control small{font-size:10px;color:#e6f0d0;text-shadow:0 2px 4px #143e30}
+#joystick{position:relative;width:124px;height:124px;border:1px solid #d8f4d575;border-radius:50%;background:#183f354d;box-shadow:inset 0 0 0 12px #e9f8da0b;pointer-events:auto;touch-action:none;cursor:grab}
+#joystick:active{cursor:grabbing}.stick-arrows{position:absolute;inset:8px;text-align:center;line-height:34px;color:#e0f2d47a;font:18px/34px sans-serif;pointer-events:none}
+#joystick-knob{position:absolute;left:calc(50% - 24px);top:calc(50% - 24px);width:48px;height:48px;border-radius:50%;background:#d9f1d6b8;border:2px solid #f0f8de;box-shadow:0 4px 12px #173d3455;pointer-events:none}
+.character-actions{position:absolute;right:max(24px,env(safe-area-inset-right));bottom:max(20px,env(safe-area-inset-bottom));width:180px;z-index:7;display:flex;align-items:center;flex-direction:column;gap:9px}
+.interaction-prompt{text-align:center;color:#f1eed1;font-size:11px;line-height:1.6;text-shadow:0 2px 5px #173e30;min-height:34px}
+.interact-button{position:relative;width:116px;height:116px;border-radius:50%;background:#e9edc8;border:2px solid #ffeda8;color:#24483a;box-shadow:0 4px 0 #1e493e85,0 0 0 5px #f1e6a41a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:9px;touch-action:manipulation}
+.interact-button:disabled{background:#244c40bd;color:#d0dbc3;border-color:#94b09670;box-shadow:none}.interact-button:not(:disabled):active{background:#c5e5c1}
+.interact-button .icon{width:32px;height:32px}.interact-button b{font-size:12px}.interact-button small{font-size:8px;line-height:1.5;max-width:95px}
+.interact-button kbd{position:absolute;top:0;right:0;padding:3px 7px;border-radius:5px;border:1px solid #f6efbe;background:#204a3d;color:#f8efc8;font:11px var(--mono)}
+.quick-actions{display:flex;gap:6px}.quick-actions button{position:relative;min-width:52px;min-height:52px;padding:6px;border-radius:8px;border:1px solid #bdd2ab85;background:#244538ed;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;touch-action:manipulation}
+.quick-actions .icon{width:23px;height:23px}.quick-actions span{font-size:9px}.quick-actions kbd{position:absolute;top:2px;left:4px;font:8px var(--mono);color:#dcddac}
+.quick-actions button:disabled{opacity:.42}.quick-actions button.suggested{border-color:#f6de8c;background:#3f664b}
+.player-label{position:absolute;left:0;top:0;color:#c4ffea;font:700 9px var(--mono);letter-spacing:1px;text-shadow:0 2px 3px #164333;z-index:3;will-change:transform;pointer-events:none}.player-label span{display:block;text-align:center;font-size:10px;line-height:14px}
+.utility-bar{top:96px;bottom:auto;right:16px;display:flex;flex-direction:row;gap:4px}.utility-bar button{background:#203e34cc;border-radius:5px;min-width:44px;min-height:44px}.utility-bar #help span{display:none}
+.plot-info{right:24px;bottom:257px;width:210px;padding:12px;box-shadow:none;background:#203e34e8}.plot-info #apply-action{display:none}.plot-info .crop-identity{display:none}.plot-info .plot-title{flex-wrap:wrap}
+.toast{bottom:205px;max-width:min(500px,75vw);pointer-events:none;z-index:9}.drought-alert{top:151px;left:50%;max-width:55vw;z-index:8}
+.tutorial-window{top:96px;left:16px;width:240px;padding:13px;background:#203e34eb;box-shadow:none}.tutorial-window h2{font-size:16px}.tutorial-window p{font-size:11px;line-height:1.7}.tutorial-window .tutorial-feedback{font-size:10px}.tutorial-window .tutorial-instruction{font-size:11px}.tutorial-window .tutorial-clock{font-size:9px}.tutorial-window .text-button{font-size:10px;min-height:44px}
+#ui[data-phase="paused"] .movement-control,#ui[data-phase="paused"] .character-actions{visibility:hidden}
+.crop-label{opacity:.94}.crop-label b{font-size:10px}.crop-label .icon{height:22px;width:22px}
+@media(max-width:1000px){
+  .top-hud{gap:12px;padding:8px 12px;left:10px;right:10px}.top-hud .brand{min-width:145px}.top-hud .brand b{font-size:18px}.top-hud .brand small{font-size:5px}
+  .resource-group{gap:18px}.resource strong{font-size:17px}.cargo-resource small{font-size:8px}.crop-cargo>span{font-size:8px}.time-resource{min-width:100px;padding-left:12px}.time-resource strong{font-size:19px}
+  .tutorial-window,.mission-widget{left:10px;top:94px;width:220px}.utility-bar{top:94px;right:10px}.utility-bar button{min-width:44px;min-height:44px}
+  .plot-info{right:12px;bottom:244px;width:190px}.movement-control{left:18px}.character-actions{right:14px;width:170px}.bottom-hud .tool{width:78px;height:70px}
+}
+@media(max-width:640px){
+  .top-hud{padding:8px 10px;row-gap:6px}.top-hud .brand{flex:1 0 calc(100% - 115px)}.resource-group{gap:10px;padding-top:5px}.water-resource small{font-size:7px}.crop-cargo{min-width:95px}.resource strong{font-size:14px}
+  .tutorial-window,.mission-widget{top:142px;width:205px;padding:10px}.tutorial-window h2{font-size:14px}.tutorial-window p{font-size:10px}.tutorial-window .tutorial-feedback{display:none}.tutorial-window .tutorial-instruction{font-size:10px}.tutorial-window .tutorial-clock{display:none}.tutorial-dots{margin:8px 0}
+  .utility-bar{top:142px;right:8px;flex-direction:column}.utility-bar #help{min-width:44px;min-height:44px;width:44px;padding:0;justify-content:center}
+  .movement-control{left:12px;bottom:16px}.movement-control small{font-size:8px}#joystick{width:106px;height:106px}.stick-arrows{line-height:28px}
+  .character-actions{right:10px;bottom:16px;width:158px;gap:6px}.interact-button{width:105px;height:105px}.interaction-prompt{font-size:9px;max-width:150px}.quick-actions{gap:4px}.quick-actions button{min-width:48px;min-height:48px}
+  .bottom-hud{bottom:21px;left:calc(50% - 18px);max-width:calc(100vw - 290px)}.bottom-hud .tool{min-width:44px;width:52px;height:65px;padding:4px 2px}.bottom-hud .tool b{font-size:8px}.bottom-hud .tool small{font-size:6px}.bottom-hud .tool .icon{width:25px;height:25px}.bottom-hud .action-bar{gap:2px;padding:3px}.tool-hint{display:none}
+  .plot-info{right:10px;bottom:249px;width:167px;font-size:10px}.plot-info .plot-title{gap:4px}.plot-info .plot-title b{font-size:10px}.plot-info #crop-details{margin-top:8px}.plot-info .crop-portrait{display:none}
+  .toast{bottom:240px;font-size:10px;max-width:85vw}.drought-alert{top:375px;max-width:90vw;width:90vw;left:50%}.drought-alert p{font-size:9px}
+}
+@media(max-height:580px) and (min-width:650px){
+  .top-hud{top:6px;min-height:52px;padding:5px 10px}.top-hud .brand b{font-size:17px}.resource strong{font-size:14px}.resource small,.water-resource small{font-size:7px}
+  .tutorial-window,.mission-widget{top:76px;width:205px;padding:9px}.tutorial-window .tutorial-feedback,.tutorial-clock,.tutorial-dots{display:none}.tutorial-window h2{font-size:13px;margin:5px 0}.tutorial-window p{font-size:10px;margin:5px 0;line-height:1.5}.tutorial-window .text-button{min-height:44px;margin:0}.tutorial-window .tutorial-instruction{font-size:10px;padding-top:6px}.tutorial-window .primary-button{margin-top:6px;min-height:44px}
+  .utility-bar{top:76px}.utility-bar button{min-width:44px;min-height:44px}.mission-widget h2{margin:6px 0;font-size:13px}
+  #joystick{width:96px;height:96px}.stick-arrows{line-height:25px}.movement-control{left:16px;bottom:12px;gap:5px}.movement-control small{font-size:8px}
+  .character-actions{right:12px;bottom:12px;width:168px;gap:5px}.interact-button{width:93px;height:93px}.interact-button .icon{height:26px;width:26px}.interact-button b{font-size:11px}.interact-button small{font-size:7px}.interaction-prompt{min-height:24px;font-size:9px}.quick-actions button{min-height:44px;min-width:48px}.quick-actions .icon{width:20px;height:20px}
+  .bottom-hud{bottom:12px}.bottom-hud .tool{height:58px;width:68px}.bottom-hud .tool .icon{width:24px;height:24px}.bottom-hud .tool b{font-size:9px}.bottom-hud .tool small{font-size:7px}
+  .plot-info{bottom:204px;right:12px;width:174px;padding:8px}.plot-info .crop-portrait,.plot-info .crop-identity{display:none}.plot-info #crop-details{margin-top:5px}.plot-info .plot-meter{margin:4px 0}.plot-info .plot-title b{font-size:10px}.plot-info .state-pill{font-size:8px}
+  .toast{bottom:105px}.drought-alert{top:133px}
+}
+.mission-weather{display:block;margin-top:9px;font-size:9px;color:#d8d6a4}

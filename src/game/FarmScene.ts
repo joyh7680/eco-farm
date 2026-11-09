@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Crop, GameState } from './GameState';
 import type { CropKind } from './GameConfig';
 import { TUTORIAL_PLOT } from './Tutorial';
+import { Player, PLOT_POSITIONS, type FarmTarget } from './Player';
 
 const C = {
   grass: '#427d54', grassLight: '#75a75c', dark: '#193f37', soil: '#674b36',
@@ -173,6 +174,13 @@ export class FarmScene {
   private warningColor = new THREE.Color('#e69a5a');
   private drySunColor = new THREE.Color('#ffd391');
   private previewCrops: Crop[] = Array.from({ length: 6 }, (_, i) => ({ kind: i % 3 === 1 ? 'bean' : 'leaf', growth: [1, 0.8, 0.5, 0.7, 1, 0.9][i], moisture: 65, dryTime: 0, dead: false }));
+  private astronaut!: THREE.Group;
+  private body!: THREE.Group;
+  private arms: THREE.Group[] = [];
+  private legs: THREE.Group[] = [];
+  private wateringCan!: THREE.Group;
+  private targetRing!: THREE.Mesh;
+  private reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   constructor(container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'low-power' });
@@ -180,7 +188,7 @@ export class FarmScene {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.setClearColor('#638e7e');
     this.renderer.domElement.id = 'world';
-    this.renderer.domElement.setAttribute('aria-label', '밭과 보급 기지를 클릭해 조작하는 3D 농장');
+    this.renderer.domElement.setAttribute('aria-label', 'WASD, 방향키 또는 가상 조이스틱으로 우주 캐릭터를 이동하는 3D 농장');
     container.append(this.renderer.domElement);
     this.scene.background = new THREE.Color('#719d88');
     this.scene.fog = new THREE.Fog('#719d88', 48, 105);
@@ -210,6 +218,7 @@ export class FarmScene {
       bake(p.root, [p.leaf, p.bean, p.seeds, p.highlight, p.marker, p.soil, ...this.targets]);
     });
     bake(this.scene, [this.ship, this.waterLevel, this.beacon, this.supplyPulse, ...this.plots.map(p => p.root), ...this.targets]);
+    this.makeAstronaut();
     this.planet = this.makeSpace();
     this.travelShip = this.spaceship(this.space, -4, -2, 3);
     this.travelShip.scale.setScalar(0.28); this.travelShip.rotation.z = -0.55;
@@ -308,6 +317,8 @@ export class FarmScene {
     cylinder(g, '#a5aa85', 1.4, 0.55, 0.25, 0.12, 0.9);
     const pipe = cylinder(g, '#a5aa85', 0.8, 0.9, 0.25, 0.12, 1.3); pipe.rotation.z = Math.PI / 2;
     orb(g, C.orange, 1.42, 0.98, 0.25, 0.2);
+    const hit = box(g, new THREE.MeshBasicMaterial({ visible: false }), 0, 1.6, 0, 3.2, 3.4, 3.1);
+    hit.userData = { tank: true }; this.targets.push(hit);
     return level;
   }
 
@@ -376,7 +387,7 @@ export class FarmScene {
   private makePlots() {
     const plots: PlotVisual[] = [];
     // Three columns, two rows; central path leaves generous separation between plots.
-    const positions = [[-4.8, -0.9], [-0.3, -0.9], [4.2, -0.9], [-4.8, 3.6], [-0.3, 3.6], [4.2, 3.6]];
+    const positions = PLOT_POSITIONS;
     for (let i = 0; i < positions.length; i++) {
       const [x, z] = positions[i];
       const root = group(this.scene, x, 0.23, z);
@@ -521,7 +532,56 @@ export class FarmScene {
 
   toggleQuality() { this.highQuality = !this.highQuality; this.resize(); return this.highQuality; }
 
-  hit(clientX: number, clientY: number): { plot?: number; delivery?: boolean } | null {
+  private makeAstronaut() {
+    this.astronaut = group(this.scene, 0, 0.27, 7.4);
+    const ring = mesh(this.astronaut, new THREE.RingGeometry(0.45, 0.53, 20), new THREE.MeshBasicMaterial({ color: '#b8fff0', side: THREE.DoubleSide }), 0, 0.01, 0, 1, 1, 1);
+    ring.rotation.x = -Math.PI / 2;
+    this.body = group(this.astronaut, 0, 0, 0);
+    box(this.body, '#f5eacf', 0, 0.95, 0, 0.66, 0.72, 0.48);
+    box(this.body, '#3b7d73', 0, 0.98, -0.32, 0.53, 0.6, 0.27);
+    box(this.body, '#e5aa50', 0, 0.79, 0.25, 0.53, 0.15, 0.06);
+    box(this.body, '#36796f', 0, 1.13, 0.25, 0.32, 0.24, 0.05);
+    orb(this.body, '#f6edce', 0, 1.62, 0, 0.48, 0.48, 0.43);
+    orb(this.body, '#294f60', 0, 1.64, 0.22, 0.4, 0.31, 0.29);
+    box(this.body, '#a0ece1', -0.12, 1.75, 0.48, 0.21, 0.07, 0.03);
+    for (const side of [-1, 1]) {
+      const arm = group(this.body, side * 0.43, 1.2, 0);
+      box(arm, '#eee5c7', 0, -0.23, 0, 0.23, 0.47, 0.25);
+      box(arm, '#3c8076', 0, -0.49, 0, 0.25, 0.17, 0.26);
+      this.arms.push(arm); bake(arm);
+      const leg = group(this.body, side * 0.19, 0.61, 0);
+      box(leg, '#eee5c7', 0, -0.22, 0, 0.27, 0.45, 0.29);
+      box(leg, '#355c56', 0, -0.48, 0.07, 0.3, 0.19, 0.43);
+      this.legs.push(leg); bake(leg);
+    }
+    this.wateringCan = group(this.arms[1], 0, -0.6, 0.15);
+    box(this.wateringCan, '#82cfd3', 0, 0, 0, 0.35, 0.35, 0.4);
+    const spout = box(this.wateringCan, '#c3f1e7', 0, 0.1, 0.36, 0.12, 0.12, 0.45); spout.rotation.x = -0.3;
+    bake(this.wateringCan); bake(this.body, [...this.arms, ...this.legs]);
+    this.targetRing = mesh(this.scene, new THREE.RingGeometry(0.5, 0.58, 24), new THREE.MeshBasicMaterial({ color: '#ffe49a', side: THREE.DoubleSide, transparent: true, opacity: 0.8 }), 0, 0.28, 0, 1, 1, 1);
+    this.targetRing.rotation.x = -Math.PI / 2;
+    this.targetRing.visible = false;
+  }
+
+  updatePlayer(player: Player, target: FarmTarget | null) {
+    this.astronaut.position.set(player.x, 0.27, player.z);
+    this.body.rotation.y = player.angle;
+    const stride = this.reducedMotion ? 0.18 : 0.55;
+    const walk = player.moving ? Math.sin(player.walkTime) * stride : 0;
+    const action = Math.sin((1 - player.actionTime / 0.48) * Math.PI);
+    this.body.position.y = player.moving && !this.reducedMotion ? Math.abs(Math.sin(player.walkTime)) * 0.07 : 0;
+    this.body.rotation.x = player.actionTime > 0 ? action * 0.23 : 0;
+    this.legs.forEach((leg, i) => { leg.rotation.x = walk * (i ? -1 : 1); });
+    this.arms.forEach((arm, i) => { arm.rotation.x = player.actionTime > 0 ? -action * 1.2 : walk * (i ? 1 : -1); });
+    this.wateringCan.visible = player.actionTime > 0 && ['water', 'refill'].includes(player.action);
+    this.targetRing.visible = !!target;
+    if (target) this.targetRing.position.set(target.x, 0.29, target.z);
+  }
+
+  projectPlayer(player: Player) { return this.projectPosition(new THREE.Vector3(player.x, 2.7, player.z)); }
+  projectTarget(target: FarmTarget) { return this.projectPosition(new THREE.Vector3(target.x, target.kind === 'plot' ? 0.7 : 3.7, target.z)); }
+
+  hit(clientX: number, clientY: number): { plot?: number; delivery?: boolean; tank?: boolean } | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.pointer.set((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
@@ -586,20 +646,23 @@ export class FarmScene {
 
   get harvestInFlight() { return this.harvestFlights.length; }
 
+  refillEffect() { this.burst(-1, 'refill'); }
+
   burst(id: number, kind: string) {
-    const origin = id >= 0 ? this.plots[id].root.position : kind === 'land' ? this.ship.position : new THREE.Vector3(9.6, 1, 1.2);
-    const n = kind === 'water' ? 24 : kind === 'won' ? 80 : 22;
+    const origin = id >= 0 ? this.plots[id].root.position : kind === 'land' ? this.ship.position : kind === 'refill' ? new THREE.Vector3(-10, 1, -0.3) : new THREE.Vector3(9.6, 1, 1.2);
+    const water = kind === 'water' || kind === 'refill';
+    const n = water ? 24 : kind === 'won' ? 80 : 22;
     let used = 0;
     for (const p of this.particles) {
       if (p.active) continue;
       const angle = random() * Math.PI * 2;
       p.active = true; p.x = origin.x + (random() - 0.5) * 2.2; p.z = origin.z + (random() - 0.5) * 2.2;
-      p.y = kind === 'water' ? 3 + random() : 0.5;
+      p.y = water ? 3 + random() : 0.5;
       p.vx = Math.cos(angle) * (kind === 'land' ? 3 : 1.2); p.vz = Math.sin(angle) * (kind === 'land' ? 3 : 1.2);
-      p.vy = kind === 'water' ? -2 : 2 + random() * 3;
+      p.vy = water ? -2 : 2 + random() * 3;
       p.max = p.life = 0.6 + random() * 0.65;
-      p.size = kind === 'water' ? 0.09 : 0.12;
-      p.color.set(kind === 'water' ? '#a7efef' : kind === 'plant' ? '#c3de81' : kind === 'land' ? '#d9cb9d' : ['#f7d572', '#e7a8b8', '#b7d783'][used % 3]);
+      p.size = water ? 0.09 : 0.12;
+      p.color.set(water ? '#a7efef' : kind === 'plant' ? '#c3de81' : kind === 'land' ? '#d9cb9d' : ['#f7d572', '#e7a8b8', '#b7d783'][used % 3]);
       if (++used >= n) break;
     }
   }
@@ -629,8 +692,9 @@ export class FarmScene {
     this.dryBlend += ((state.drought ? 1 : 0) - this.dryBlend) * Math.min(1, dt * 0.8);
     this.groundMaterial.color.set('#ffffff').lerp(this.dryColor, this.dryBlend * 0.45);
     this.sun.color.set('#fff1d0').lerp(this.drySunColor, this.dryBlend);
-    this.waterLevel.scale.y = Math.max(0.01, state.water / 100) * 1.25;
-    this.waterLevel.position.y = 1.425 + state.water / 100 * 0.625;
+    const tankWater = Math.max(0, state.water - state.canWater);
+    this.waterLevel.scale.y = Math.max(0.01, tankWater / 100) * 1.25;
+    this.waterLevel.position.y = 1.425 + tankWater / 100 * 0.625;
     this.beacon.scale.setScalar(0.15 + Math.sin(this.elapsed * 3) * 0.03);
     this.plots.forEach((v, i) => {
       const guided = !!state.tutorial && !['deliver', 'complete'].includes(state.tutorial) && i === TUTORIAL_PLOT;

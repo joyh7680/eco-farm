@@ -1,4 +1,5 @@
-import { CONFIG, type Action } from '../game/GameConfig';
+import { CONFIG, type Action, type CropKind } from '../game/GameConfig';
+import type { FarmTarget } from '../game/Player';
 import type { GameState } from '../game/GameState';
 import type { FarmScene } from '../game/FarmScene';
 import { icon } from './icons';
@@ -28,6 +29,10 @@ export class GameHUD {
   onDeliver = () => {};
   onAction = (_action: Action) => {};
   onApply = () => {};
+  onInteract = () => {};
+  onUse = (_action: Action) => {};
+  onMove = (_x: number, _y: number) => {};
+  private stickPointer: number | null = null;
 
   constructor(container: HTMLElement) {
     this.root = document.createElement('div'); this.root.id = 'ui'; container.append(this.root);
@@ -36,7 +41,7 @@ export class GameHUD {
       <header class="top-hud">
         <div class="brand"><span class="brand-icon">${icon('sprout')}</span><div><b>ECO FARM<span class="brand-dot">®</span></b><small>AGRIA–7 · FARM RESTORATION</small></div></div>
         <div class="resource-group">
-          <div class="resource water-resource">${icon('drop')}<div><small>물 보유량</small><strong><span id="water">100</span><em> / 100</em></strong></div><div class="resource-track"><i id="water-meter"></i></div></div>
+          <div class="resource water-resource">${icon('drop')}<div><small>전체 물 · 탱크 + 물뿌리개</small><strong><span id="water">100</span><em> / 100</em></strong><small>휴대 <b id="can-water">20</b>/30 · 탱크 <b id="tank-water">80</b></small></div><div class="resource-track"><i id="water-meter"></i></div></div>
           <div class="resource">${icon('coin')}<div><small>보유 자금</small><strong><span id="money">300</span><em> G</em></strong></div></div>
           <div class="resource cargo-resource"><div><small>보급 기지 보관함 · <span id="inventory">0</span>개</small><div class="crop-cargo"><span data-crop="leaf">${icon('leaf')}달빛 상추 <b id="inventory-leaf">0</b></span><span data-crop="bean">${icon('bean')}별빛 콩 <b id="inventory-bean">0</b></span></div></div></div>
         </div>
@@ -49,6 +54,7 @@ export class GameHUD {
         <div class="objective"><span>보급 기지에 작물 납품</span><b><span id="delivered">0</span><em> / 4</em></b></div>
         <div class="mission-progress"><i id="delivery-meter"></i><span></span><span></span><span></span></div>
         <div class="sub-objective"><span id="drought-check">◇</span> 가뭄 이후 수확·납품 <b><span id="dry-delivered">0</span> / 2</b></div>
+        <small class="mission-weather" id="mission-weather">가뭄까지 70초</small>
       </section>
 
       <div class="world-status play-only"><span class="weather-symbol">${icon('sun')}</span><div><small>아그리아–7 기상 관측</small><b id="weather">맑음 · 생육에 적합</b><span id="weather-sub">건조 전선 접근 중</span></div></div>
@@ -65,19 +71,21 @@ export class GameHUD {
       </aside>
 
       <div class="bottom-hud play-only">
-        <div class="tool-hint"><span class="mouse-icon"></span><div><b id="tool-hint">씨앗을 선택하고 밭을 눌러 심으세요</b><small>1–4 도구 선택 · 5 납품 · SPACE 일시정지</small></div></div>
-        <nav class="action-bar" aria-label="농장 도구">
-          <div class="toolbar-caption">FARMING KIT <span>도구를 고른 뒤 밭을 클릭하세요</span></div>
-          <button class="tool active" data-tool="leaf" aria-label="달빛 상추 심기" aria-pressed="true"><kbd>1</kbd>${icon('leaf')}<b>달빛 상추</b><small>15G · 30초</small></button>
-          <button class="tool" data-tool="bean" aria-label="별빛 콩 심기" aria-pressed="false"><kbd>2</kbd>${icon('bean')}<b>별빛 콩</b><small>25G · 45초</small></button>
-          <span class="toolbar-separator"></span>
-          <button class="tool" data-tool="water" aria-label="물주기" aria-pressed="false"><kbd>3</kbd>${icon('water')}<b>물주기</b><small>물 −10</small></button>
-          <button class="tool" data-tool="harvest" aria-label="수확" aria-pressed="false"><kbd>4</kbd>${icon('harvest')}<b>수확</b><small>익은 작물</small></button>
-          <span class="toolbar-separator"></span>
-          <button class="tool delivery-tool" id="deliver" aria-label="수확물 납품"><kbd>5</kbd>${icon('delivery')}<b>납품하기</b><small id="cargo-label">보관함 비어 있음</small><span class="cargo-badge" id="cargo-badge" hidden>0</span></button>
+        <div class="tool-hint"><div><b id="tool-hint">밭 가까이 이동하세요</b><small>WASD / 방향키 이동 · E 행동 · ESC 메뉴</small></div></div>
+        <nav class="action-bar" aria-label="심을 씨앗 선택">
+          <div class="toolbar-caption">SEED POUCH <span>심을 씨앗</span></div>
+          <button class="tool active" data-tool="leaf" aria-label="달빛 상추 씨앗 선택" aria-pressed="true">${icon('leaf')}<b>달빛 상추</b><small>15G · 30초</small></button>
+          <button class="tool" data-tool="bean" aria-label="별빛 콩 씨앗 선택" aria-pressed="false">${icon('bean')}<b>별빛 콩</b><small>25G · 45초</small></button>
         </nav>
       </div>
-      <div class="utility-bar"><button id="help" title="게임 방법 / 튜토리얼" aria-label="게임 방법 / 튜토리얼">? <span>게임 방법</span></button><button id="pause" title="일시정지 (Space)" aria-label="일시정지">${icon('pause')}</button><button id="mute" title="음소거" aria-label="음소거" aria-pressed="false">${icon('sound')}</button><button id="quality" title="렌더링 품질 전환 (Q)" aria-label="렌더링 품질 전환">SD</button><button id="fullscreen" title="전체 화면" aria-label="전체 화면">${icon('expand')}</button></div>
+      <div class="movement-control play-only"><div id="joystick" role="group" aria-label="캐릭터 이동 조이스틱"><span class="stick-arrows">↑<br>←　 →<br>↓</span><i id="joystick-knob"></i></div><small>WASD / 방향키 · 이동</small></div>
+      <div class="character-actions play-only">
+        <div class="interaction-prompt" id="interaction-prompt" role="status">밭이나 시설 가까이 이동하세요</div>
+        <button id="interact" class="interact-button" disabled><kbd>E</kbd><span id="interact-icon">${icon('sprout')}</span><b id="interact-name">가까이 이동</b><small id="interact-detail">대상 자동 선택</small></button>
+        <div class="quick-actions"><button data-use="leaf" aria-label="씨앗 심기"><kbd>1</kbd>${icon('leaf')}<span>심기</span></button><button data-use="water" aria-label="물주기"><kbd>2</kbd>${icon('drop')}<span>물주기</span></button><button data-use="harvest" aria-label="수확하기"><kbd>3</kbd>${icon('harvest')}<span>수확</span></button></div>
+      </div>
+      <div id="player-label" class="player-label play-only" aria-hidden="true">YOU <span>▼</span></div>
+      <div class="utility-bar"><button id="help" title="게임 방법 / 튜토리얼" aria-label="게임 방법 / 튜토리얼">? <span>게임 방법</span></button><button id="pause" title="일시정지 (Esc)" aria-label="일시정지">${icon('pause')}</button><button id="mute" title="음소거" aria-label="음소거" aria-pressed="false">${icon('sound')}</button><button id="quality" title="렌더링 품질 전환 (Q)" aria-label="렌더링 품질 전환">SD</button><button id="fullscreen" title="전체 화면" aria-label="전체 화면">${icon('expand')}</button></div>
       <div id="debug" hidden></div>
 
       <section class="overlay start-overlay briefing-overlay" id="start-screen" role="dialog" aria-modal="true" aria-labelledby="briefing-title" hidden>
@@ -106,7 +114,7 @@ export class GameHUD {
 
       <section class="overlay modal-overlay" id="help-screen" role="dialog" aria-modal="true" aria-labelledby="help-title" hidden>
         <div class="modal help-modal"><span class="eyebrow">FARM FIELD GUIDE</span><h2 id="help-title" tabindex="-1">게임 방법 / 튜토리얼</h2>
-          <div id="help-controls"><p>도구를 선택한 뒤 밭을 클릭·터치하세요.</p><dl><dt>1 · 달빛 상추</dt><dd>15G · 성장 30초</dd><dt>2 · 별빛 콩</dt><dd>25G · 성장 45초 · 물 절약</dd><dt>3 · 물주기</dt><dd>물 10 사용 · 수분 +55</dd><dt>4 · 수확</dt><dd>성장률 100% 작물 수확 · 고사 작물 정리</dd><dt>5 · 납품하기</dt><dd>보관함의 수확물 판매 · 목표 진행</dd></dl><p>70초 후 가뭄 · 수분 감소 ×2.25<br>8분 안에 4개 납품, 그중 2개는 가뭄 이후 수확하세요.<br>Space / Esc: 일시정지 · Q: 화질 · F3: FPS</p><p class="practice-note">도움말을 보는 동안 농장은 정지해요.<br>닫으면 기존 진행 상황을 그대로 이어갑니다.</p><button class="primary-button" id="replay-tutorial">튜토리얼 다시 연습하기 <span>↻</span></button></div>
+          <div id="help-controls"><p>우주 캐릭터를 직접 움직여 밭과 시설에 접근하세요.</p><dl><dt>WASD · 방향키</dt><dd>화면 방향으로 이동 · 태블릿은 왼쪽 조이스틱</dd><dt>1 · 씨앗 심기</dt><dd>하단에서 씨앗 선택 · 빈 밭 가까이 접근</dd><dt>2 · 물주기</dt><dd>물뿌리개 물 10 사용 · 수분 +55</dd><dt>3 · 수확하기</dt><dd>익은 작물 수확 · 고사 작물 정리</dd><dt>E · 자동 행동</dt><dd>근처 밭 상태에 맞게 심기·물주기·수확<br>물탱크: 물뿌리개 채우기 (최대 30)<br>SUPPLY: 보관함 수확물 납품</dd></dl><p>태블릿: 오른쪽 큰 버튼이 대상에 따라 바뀌어요.<br>전체 물 100은 한정되어 있어요. 충전 시 총량은 늘지 않아요.<br>70초 후 가뭄 · 수분 감소 ×2.25<br>8분 안에 4개 납품, 그중 2개는 가뭄 이후 수확하세요.<br>Esc / Space: 메뉴 · Q: 화질 · F3: FPS</p><p class="practice-note">도움말을 보는 동안 농장은 정지해요.<br>닫으면 기존 진행 상황을 그대로 이어갑니다.</p><button class="primary-button" id="replay-tutorial">튜토리얼 다시 연습하기 <span>↻</span></button></div>
           <div id="replay-confirm" hidden><p>튜토리얼을 다시 시작하면 현재 임무의 작물, 자원, 납품량과 시간이 초기화됩니다.</p><p>연습을 마친 후 새 임무를 시작합니다. 현재 진행 상황을 초기화하고 연습할까요?</p><button class="primary-button" id="confirm-replay">초기화하고 연습 시작</button><button class="text-button" id="cancel-replay">취소 · 도움말로 돌아가기</button></div>
           <button class="text-button" id="close-help">닫고 돌아가기</button>
         </div>
@@ -118,7 +126,7 @@ export class GameHUD {
 
       <section class="overlay modal-overlay" id="result-screen" hidden><div class="modal result-modal"><span class="eyebrow" id="result-kicker">MISSION COMPLETE</span><div class="result-seal" id="result-seal">S</div><h2 id="result-title">다시, 초록빛으로.</h2><p id="result-description">아그리아–7 첫 번째 농장 복구 성공!</p><div class="result-stats" id="result-stats"></div><p class="learning-message">작물의 수분을 확인하고 필요한 만큼만 물을 주면,<br>작은 물탱크로도 더 많은 생명을 키울 수 있어요.</p><button class="primary-button" id="retry">다시 도전하기 <span>↻</span></button><button class="text-button" id="main-menu">메인 화면으로</button></div></section>
       <div class="portrait-hint">↻ 가로 화면에서 농장을 더 넓게 볼 수 있어요.</div>`;
-    const click = (id: string, fn: () => void) => this.el(id).addEventListener('click', fn);
+    const click = (id: string, fn: () => void) => this.bindButton(this.el(id) as HTMLButtonElement, fn);
     click('learn', () => this.onContinue()); click('skip', () => this.onSkip());
     click('skip-tutorial', () => this.onStartMission()); click('end-practice', () => this.onStartMission()); click('start-mission', () => this.onStartMission());
     click('help', () => this.onHelp()); click('pause-help', () => this.onHelp()); click('close-help', () => this.onCloseHelp());
@@ -129,9 +137,82 @@ export class GameHUD {
     click('retry', () => this.onRetry()); click('main-menu', () => this.onMenu()); click('pause-menu', () => this.onMenu());
     click('pause', () => this.onPause()); click('resume', () => this.onPause());
     click('mute', () => this.onMute()); click('quality', () => this.onQuality());
-    click('deliver', () => this.onDeliver()); click('apply-action', () => this.onApply());
+    click('apply-action', () => this.onApply()); click('interact', () => this.onInteract());
     click('fullscreen', () => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen().catch(() => this.toast('이 브라우저에서는 전체 화면을 지원하지 않아요.')); });
-    this.root.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach(b => b.addEventListener('click', () => this.onAction(b.dataset.tool as Action)));
+    this.root.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach(b => this.bindButton(b, () => this.onAction(b.dataset.tool as Action)));
+    this.root.querySelectorAll<HTMLButtonElement>('[data-use]').forEach(b => this.bindButton(b, () => this.onUse(b.dataset.use as Action)));
+    const stick = this.el('joystick');
+    const move = (e: PointerEvent) => {
+      if (e.pointerId !== this.stickPointer) return;
+      const rect = stick.getBoundingClientRect(), radius = rect.width * 0.3;
+      let x = (e.clientX - rect.left - rect.width / 2) / radius, y = (e.clientY - rect.top - rect.height / 2) / radius;
+      const distance = Math.hypot(x, y);
+      if (distance > 1) { x /= distance; y /= distance; }
+      this.el('joystick-knob').style.transform = `translate(${x * radius}px, ${y * radius}px)`;
+      const force = distance > 0.16 ? Math.min(1, (distance - 0.16) / 0.84) : 0;
+      this.onMove(distance ? x / Math.min(1, distance) * force : 0, distance ? y / Math.min(1, distance) * force : 0);
+    };
+    stick.addEventListener('pointerdown', e => {
+      if (e.button !== 0 || this.stickPointer !== null || this.root.dataset.phase !== 'playing') return;
+      e.preventDefault(); this.stickPointer = e.pointerId; stick.setPointerCapture(e.pointerId); move(e);
+    });
+    stick.addEventListener('pointermove', move);
+    for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) stick.addEventListener(event, e => { if ((e as PointerEvent).pointerId === this.stickPointer) this.resetJoystick(); });
+    window.addEventListener('resize', () => this.resetJoystick());
+  }
+
+  private bindButton(button: HTMLButtonElement, activate: () => void) {
+    let touchAt = -Infinity;
+    button.addEventListener('pointerdown', e => {
+      if (e.pointerType !== 'touch' || button.disabled) return;
+      // Secondary fingers do not consistently synthesize click on tablet browsers.
+      e.preventDefault(); touchAt = performance.now(); activate();
+    });
+    button.addEventListener('click', e => {
+      if (button.disabled || (e as PointerEvent).pointerType === 'touch' || e.detail > 0 && performance.now() - touchAt < 700) return;
+      activate();
+    });
+  }
+
+  resetJoystick() {
+    const id = this.stickPointer; this.stickPointer = null;
+    const stick = this.el('joystick');
+    if (id !== null && stick.hasPointerCapture(id)) stick.releasePointerCapture(id);
+    this.el('joystick-knob').style.transform = ''; this.onMove(0, 0);
+  }
+
+  positionPlayer(position: { x: number; y: number }) {
+    this.el('player-label').style.transform = `translate(${position.x}px, ${position.y}px) translate(-50%, -100%)`;
+  }
+
+  updateInteraction(state: GameState, target: FarmTarget | null, action: Action | 'refill' | 'deliver' | null, seed: CropKind, busy: boolean) {
+    const plot = target?.kind === 'plot' ? state.plots[target.id] : null;
+    const allowed = !state.tutorial || target?.kind === 'tank' || state.tutorial === 'deliver' && target?.kind === 'supply' || plot?.id === 0 && TUTORIAL[state.tutorial].action === action;
+    const enabled = state.phase === 'playing' && !!target && !!action && allowed && !busy;
+    (this.el('interact') as HTMLButtonElement).disabled = !enabled;
+    const text: Record<string, [string, string, Parameters<typeof icon>[0]]> = {
+      leaf: ['달빛 상추 심기', '15G · 성장 30초', 'leaf'], bean: ['별빛 콩 심기', '25G · 성장 45초', 'bean'],
+      water: ['물주기', `휴대 ${state.canWater}/30 · 물 −10`, 'drop'],
+      harvest: [plot?.crop?.dead ? '마른 작물 정리' : '수확하기', '수확물 → 보급 기지 보관함', 'harvest'],
+      refill: ['물 채우기', `물뿌리개 ${state.canWater}/30 · 탱크 ${state.water - state.canWater}`, 'water'],
+      deliver: ['납품하기', `보관함 ${state.inventory.length}개 · 판매하고 목표 달성`, 'delivery'],
+    };
+    const info = action ? text[action] : null;
+    this.set('interact-name', busy ? '작업 중…' : info?.[0] ?? (plot ? '자라는 중' : '가까이 이동'));
+    this.set('interact-detail', info?.[1] ?? (plot?.crop ? `성장 ${Math.floor(plot.crop.growth * 100)}%` : '대상 자동 선택'));
+    const glyph = info?.[2] ?? 'sprout';
+    if (this.el('interact-icon').dataset.icon !== glyph) { this.el('interact-icon').dataset.icon = glyph; this.el('interact-icon').innerHTML = icon(glyph); }
+    this.set('interaction-prompt', !target ? '밭 · 물탱크 · 보급 기지에 접근하세요' : target.kind === 'tank' ? '물탱크 · 유한한 물을 나눠 사용해요' : target.kind === 'supply' ? '보급 기지 · 수확물 납품' : `${target.id + 1}번 밭 · ${plot?.crop ? CONFIG.crops[plot.crop.kind].name : '빈 밭'}`);
+    this.root.querySelectorAll<HTMLButtonElement>('[data-use]').forEach(button => {
+      const use = button.dataset.use === 'leaf' ? seed : button.dataset.use;
+      const tutorialAllowed = !state.tutorial || plot?.id === 0 && use === TUTORIAL[state.tutorial].action;
+      button.disabled = state.phase !== 'playing' || !plot || busy || !tutorialAllowed;
+      button.classList.toggle('suggested', use === action && enabled);
+    });
+    this.root.querySelectorAll<HTMLElement>('[data-tool]').forEach(b => {
+      const active = b.dataset.tool === seed;
+      b.classList.toggle('active', active); b.setAttribute('aria-pressed', String(active));
+    });
   }
 
   el(id: string) { return this.root.querySelector<HTMLElement>(`#${id}`)!; }
@@ -180,7 +261,7 @@ export class GameHUD {
     supplyLabel.classList.toggle('receiving', world.harvestInFlight > 0);
     if (!['playing', 'paused'].includes(state.phase)) return;
     // Pack projected labels without covering one another, even on a narrow phone.
-    const occupied = [...this.root.querySelectorAll<HTMLElement>('.top-hud, .mission-widget, .tutorial-window, .plot-info, .bottom-hud, .utility-bar')]
+    const occupied = [...this.root.querySelectorAll<HTMLElement>('.top-hud, .mission-widget, .tutorial-window, .plot-info, .bottom-hud, .utility-bar, .movement-control, .character-actions')]
       .filter(el => el.getClientRects().length > 0).map(el => el.getBoundingClientRect());
     const labels = state.plots.map(plot => {
       const el = this.el(`crop-label-${plot.id}`), line = this.el(`crop-leader-${plot.id}`);
@@ -233,17 +314,15 @@ export class GameHUD {
     const step = state.tutorial;
     this.root.dataset.tutorial = step ?? '';
     this.el('tutorial-window').hidden = !step;
-    this.el('plot-guide').hidden = !step || ['grow', 'harvest', 'deliver', 'complete'].includes(step) || state.phase !== 'playing';
+    this.el('plot-guide').hidden = !step || step === 'complete' || state.phase !== 'playing';
     const key = `${step}:${state.tutorialToolReady}:${state.phase}`;
     if (key === this.lastTutorial) return;
     this.lastTutorial = key;
     const info = step ? TUTORIAL[step] : null;
     this.root.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach(button => {
-      button.disabled = state.phase !== 'playing' || !!step && button.dataset.tool !== info?.action;
-      button.classList.toggle('tutorial-highlight', !!step && button.dataset.tool === info?.action);
+      button.disabled = state.phase !== 'playing' || !!step && button.dataset.tool !== 'leaf';
+      button.classList.toggle('tutorial-highlight', step === 'plant' && button.dataset.tool === 'leaf');
     });
-    (this.el('deliver') as HTMLButtonElement).disabled = state.phase !== 'playing' || !!step && step !== 'deliver';
-    this.el('deliver').classList.toggle('tutorial-highlight', step === 'deliver');
     this.el('apply-action').hidden = !!step;
     this.el('crop-details').classList.toggle('tutorial-highlight', step === 'grow');
     this.root.querySelector('.cargo-resource')!.classList.toggle('tutorial-highlight', step === 'deliver');
@@ -251,7 +330,7 @@ export class GameHUD {
     this.set('tutorial-step', step === 'complete' ? 'TUTORIAL COMPLETE' : `TUTORIAL 0${info.number} / 05`);
     this.set('tutorial-title', info.title); this.set('tutorial-description', info.description);
     this.set('tutorial-instruction', info.instruction); this.set('tutorial-feedback', info.feedback);
-    this.set('plot-guide-text', step === 'grow' ? '성장 관찰 중' : state.tutorialToolReady ? '여기를 눌러주세요' : '1번 연습 밭');
+    this.set('plot-guide-text', step === 'deliver' ? '보급 기지로 이동하세요' : step === 'grow' ? '성장 관찰 중' : '1번 밭 가까이 이동하세요');
     this.el('start-mission').hidden = step !== 'complete';
     this.el('tutorial-reset-note').hidden = step !== 'complete';
     this.el('end-practice').hidden = step === 'complete';
@@ -276,6 +355,7 @@ export class GameHUD {
     this.cropLabels(state);
     this.set('mission-status', state.tutorial ? '연습 중' : '진행 중');
     this.set('water', String(state.water)); this.meter('water-meter', state.water);
+    this.set('can-water', String(state.canWater)); this.set('tank-water', String(state.water - state.canWater));
     this.set('money', String(state.money)); this.set('inventory', String(state.inventory.length));
     this.set('inventory-leaf', String(state.inventory.filter(item => item.kind === 'leaf').length));
     this.set('inventory-bean', String(state.inventory.filter(item => item.kind === 'bean').length));
@@ -287,13 +367,11 @@ export class GameHUD {
     this.set('drought-check', state.droughtDelivered >= CONFIG.droughtGoal ? '◆' : '◇');
     this.set('weather', state.drought ? '가뭄 · 수분 관리 필요' : '맑음 · 생육에 적합');
     this.set('weather-sub', state.tutorial ? '연습 중 · 가뭄 카운트다운 정지' : state.drought ? '토양의 수분 감소 ×2.25' : `건조 전선 ${Math.max(0, Math.ceil(CONFIG.droughtAt - state.time))}초 후 도착`);
+    this.set('mission-weather', state.drought ? '가뭄 진행 중 · 수분 감소 ×2.25' : `가뭄까지 ${Math.max(0, Math.ceil(CONFIG.droughtAt - state.time))}초 · 물을 아껴주세요`);
     this.root.classList.toggle('dry', state.drought);
-    this.set('cargo-label', state.inventory.length ? `${state.inventory.length}개 납품 가능 ↗` : '보관함 비어 있음');
-    this.set('cargo-badge', String(state.inventory.length)); this.el('cargo-badge').hidden = !state.inventory.length;
-    this.el('deliver').classList.toggle('has-cargo', !!state.inventory.length);
     if (state.action !== this.lastAction) {
       this.root.querySelectorAll<HTMLElement>('[data-tool]').forEach(b => { const active = b.dataset.tool === state.action; b.classList.toggle('active', active); b.setAttribute('aria-pressed', String(active)); });
-      const hints: Record<Action, string> = { leaf: '빈 밭을 눌러 달빛 상추를 심으세요', bean: '빈 밭을 눌러 물을 아끼는 별빛 콩을 심으세요', water: '작물이 자라는 밭을 눌러 물을 주세요', harvest: '반짝이는 작물을 눌러 수확하세요' };
+      const hints: Record<Action, string> = { leaf: '빈 밭 근처에서 심기', bean: '빈 밭 근처에서 심기', water: '물탱크에서 물을 채워 가꾸세요', harvest: '보급 기지에 접근해 납품하세요' };
       this.set('tool-hint', hints[state.action]); this.lastAction = state.action;
     }
     if (state.selected !== this.lastSelected) { this.el('plot-info').hidden = state.selected < 0; this.lastSelected = state.selected; }

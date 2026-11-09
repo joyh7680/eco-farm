@@ -6,6 +6,17 @@ function game() { const s = new GameState(); s.reset('playing'); return s; }
 function advance(s: GameState, seconds: number) { for (let t = 0; t < seconds - 0.0001; t += 0.05) s.update(0.05); }
 
 describe('farm simulation', () => {
+  it('refills the carried can without creating water and refuses watering an empty can', () => {
+    const s = game(); s.act(0, 'leaf'); s.act(0, 'water'); s.act(0, 'water');
+    expect(s.canWater).toBe(0); expect(s.water).toBe(80);
+    expect(s.act(0, 'water')).toContain('물뿌리개'); expect(s.waterUsed).toBe(20);
+    expect(s.refillWater()).toBeNull(); expect(s.canWater).toBe(30); expect(s.water).toBe(80);
+    expect(s.refillWater()).toContain('가득'); expect(s.water).toBe(80);
+    s.canWater = 0; s.water = 5; s.refillWater(); expect(s.canWater).toBe(5); expect(s.water).toBe(5);
+    expect(s.act(0, 'water')).toContain('부족'); expect(s.refillWater()).toContain('남은 물');
+    s.phase = 'paused'; s.canWater = 0; s.refillWater(); expect(s.canWater).toBe(0);
+    s.reset('playing'); expect(s.canWater).toBe(CONFIG.startingCanWater);
+  });
   it('keeps crop identity on harvest events after the plot is emptied and emits no harvest for dead crops', () => {
     const s = game(); s.act(0, 'leaf'); s.act(1, 'bean'); s.act(2, 'leaf');
     advance(s, 45.1); s.plots[2].crop!.dead = true;
