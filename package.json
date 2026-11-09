@@ -1,0 +1,16 @@
+{
+  "name": "eco-farm",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run",
+    "test:browser": "node scripts/playtest.mjs",
+    "test:smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": { "three": "^0.181.1" },
+  "devDependencies": { "@types/three": "^0.181.0", "typescript": "^5.9.3", "vite": "^7.2.2", "vitest": "^4.0.8", "playwright": "^1.56.1" }
+}
