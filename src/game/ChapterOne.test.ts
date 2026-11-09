@@ -1,18 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import { CHAPTER_SAVE_KEY, ChapterOne, DEPOSIT, INSPECT, ROCKS, SOILS, WEEDS, type ChapterTarget } from './ChapterOne';
 import { Player } from './Player';
+import { LANDING_EXIT } from './Arrival';
 
 const storage = () => { const data = new Map<string, string>(); return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); } }; };
 function setup() { const c = new ChapterOne(storage()), p = new Player(); c.finishIntro(p); while (c.dialogue.length) c.nextDialogue(p); return { c, p }; }
-function work(c: ChapterOne, p: Player, t: ChapterTarget) { p.x = t.x; p.z = t.hz > 1 ? t.z + t.hz + 0.4 : t.z; expect(c.begin(p, t)).toBe(true); p.update(0.5); c.finishWork(p); }
+function work(c: ChapterOne, p: Player, t: ChapterTarget) { p.x = t.x; p.z = t.hz > 1 ? t.z + t.hz + 0.4 : t.z; if (t.kind === 'inspect') { c.discover(p); dismiss(c, p); } expect(c.begin(p, t)).toBe(true); p.update(0.5); c.finishWork(p); }
 function dismiss(c: ChapterOne, p: Player) { while (c.dialogue.length) c.nextDialogue(p); }
 function inspect(c: ChapterOne, p: Player) { work(c, p, INSPECT); expect(c.stage).toBe('INSPECT_FARM'); dismiss(c, p); }
 
 describe('Chapter 01 restoration', () => {
+  it('requires leaving the landing site on foot before the farm can be inspected', () => {
+    const { c, p } = setup();
+    p.x = LANDING_EXIT.x; p.z = LANDING_EXIT.z;
+    expect(c.discover(p)).toBe(false); expect(c.targets()).toEqual([]);
+    p.x = 8; p.z = 7;
+    expect(c.discover(p)).toBe(true); expect(c.discovered).toBe(true);
+    expect(c.dialogue[0]).toContain('발견'); expect(c.begin(p, INSPECT)).toBe(false);
+    dismiss(c, p); expect(c.targets()).toEqual([INSPECT]);
+    expect(c.discover(p)).toBe(false);
+  });
+  it('saves exploration and discovered farm state separately without replaying discovery', () => {
+    const s = storage(), c = new ChapterOne(s), p = new Player();
+    p.chapterMap = true; p.x = LANDING_EXIT.x; p.z = LANDING_EXIT.z;
+    c.finishIntro(p); dismiss(c, p);
+    const exploring = new ChapterOne(s); expect(exploring.load(p)).toBe(true); expect(exploring.discovered).toBe(false);
+    p.x = 8; p.z = 7; exploring.discover(p);
+    const discovered = new ChapterOne(s); expect(discovered.load(p)).toBe(true); expect(discovered.discovered).toBe(true);
+    dismiss(discovered, p); expect(discovered.discover(p)).toBe(false);
+  });
   it('guards distance, order, dialogue and duplicate work; commits after animation', () => {
     const { c, p } = setup();
     expect(c.begin(p, INSPECT)).toBe(false);
     p.x = INSPECT.x; p.z = 1.4;
+    c.discover(p); dismiss(c, p);
     expect(c.begin(p, ROCKS[0])).toBe(false);
     expect(c.begin(p, INSPECT)).toBe(true);
     expect(c.stage).toBe('EXPLORE'); expect(c.finishWork(p)).toBeNull();

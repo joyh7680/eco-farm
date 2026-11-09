@@ -5,8 +5,9 @@ import { GameHUD } from '../ui/GameHUD';
 import { CONFIG, type Action, type CropKind } from './GameConfig';
 import { TUTORIAL_PLOT } from './Tutorial';
 import { FARM_TARGETS, Player, type FarmTarget } from './Player';
-import { ChapterOne, CHAPTER_LABELS, type ChapterTarget } from './ChapterOne';
+import { ChapterOne, CHAPTER_LABELS, DISCOVERY_APPROACH, type ChapterTarget } from './ChapterOne';
 import { ChapterHUD } from '../ui/ChapterHUD';
+import { ARRIVAL, LANDING_EXIT, LANDING_SITE } from './Arrival';
 
 export class Game {
   readonly state = new GameState();
@@ -41,6 +42,7 @@ export class Game {
     this.chapterHUD.onResumeChapter = () => this.start();
     this.chapterHUD.onLegacy = () => {
       this.chapter?.save(this.player); this.chapter = null;
+      this.player.chapterMap = false;
       this.state.reset('briefing'); this.world.resetEffects(); this.resetPlayer();
       this.hud.resetTransient(); this.accumulator = 0; this.hud.update(this.state);
       this.chapterHUD.update(null, null, false, -1);
@@ -128,7 +130,8 @@ export class Game {
   start(resetChapter = false) {
     this.state.reset('intro'); this.world.resetEffects();
     this.resetPlayer();
-    this.player.x = 7.4; this.player.z = -4.95;
+    this.player.x = LANDING_EXIT.x; this.player.z = LANDING_EXIT.z;
+    this.player.chapterMap = true;
     this.chapter = new ChapterOne(this.chapterStorage);
     if (!this.chapterStorage) this.chapter.storageFailed = true;
     if (!resetChapter) this.chapter.load(this.player);
@@ -143,10 +146,12 @@ export class Game {
   finishIntro() {
     if (this.state.phase !== 'intro') return;
     if (this.chapter) {
-      this.introTime = 6.5; this.state.phase = 'playing'; this.accumulator = 0;
-      this.player.x = 7.4; this.player.z = -4.95;
+      this.introTime = ARRIVAL.duration; this.state.phase = 'playing'; this.accumulator = 0;
+      this.player.x = LANDING_EXIT.x; this.player.z = LANDING_EXIT.z;
       this.chapter.finishIntro(this.player); this.clearInput();
-      this.world.burst(-1, 'land'); this.hud.update(this.state); return;
+      this.world.ship.position.set(LANDING_SITE.x, 0.2, LANDING_SITE.z);
+      if (!this.landed) this.world.burst(-1, 'land');
+      this.landed = true; this.hud.update(this.state); return;
     }
     this.introTime = CONFIG.introDuration; this.state.phase = 'briefing'; this.accumulator = 0;
     this.world.burst(-1, 'land'); this.hud.update(this.state);
@@ -290,12 +295,13 @@ export class Game {
     if (this.state.phase === 'intro') {
       if (!document.hidden) this.introTime += dt;
       if (!this.chapter) this.hud.intro(this.introTime);
-      if (this.introTime >= (this.chapter ? 3.4 : 7) && !this.landed) { this.landed = true; this.world.burst(-1, 'land'); this.audio.play('deliver'); }
-      if (this.introTime >= (this.chapter ? 6.5 : CONFIG.introDuration)) this.finishIntro();
+      if (this.introTime >= (this.chapter ? ARRIVAL.landedAt : 7) && !this.landed) { this.landed = true; this.world.burst(-1, 'land'); this.audio.play('deliver'); }
+      if (this.introTime >= (this.chapter ? ARRIVAL.duration : CONFIG.introDuration)) this.finishIntro();
     }
     if (this.state.phase === 'playing') {
       if (this.chapter) {
         if (!this.chapter.dialogue.length) this.player.update(dt);
+        if (this.chapter.discover(this.player)) { this.clearInput(); this.hud.toast('버려진 농장을 발견했습니다!', 4000); this.audio.play('deliver'); }
         const finished = this.chapter.finishWork(this.player); if (finished) this.chapterEffect(finished);
         this.state.selected = -1;
         this.saveTime += dt;
@@ -308,7 +314,7 @@ export class Game {
         this.processEvents();
       }
     }
-    this.world.view.update(this.player, ['playing', 'paused'].includes(this.state.phase), dt);
+    this.world.view.update(this.player, ['playing', 'paused'].includes(this.state.phase) || !!this.chapter && this.state.phase === 'intro', dt);
     this.world.adaptResolution(dt, this.state.phase === 'playing');
     this.hud.root.dataset.overview = String(this.world.view.overview);
     this.hudTime += dt;
@@ -324,8 +330,9 @@ export class Game {
     this.world.render(this.state, dt, this.state.phase === 'intro' ? this.introTime : -1, this.chapter, this.player);
     if (this.chapter) {
       const targets = this.chapter.targets();
-      const goal = targets.sort((a, b) => Math.hypot(a.x - this.player.x, a.z - this.player.z) - Math.hypot(b.x - this.player.x, b.z - this.player.z))[0];
-      this.chapterHUD.waypoint(goal && !this.chapter.nearby(this.player) && !this.chapter.dialogue.length && this.state.phase === 'playing' ? this.world.projectChapterTarget(goal) : null, goal ? CHAPTER_LABELS[goal.kind] : '');
+      const searching = this.chapter.stage === 'EXPLORE' && !this.chapter.discovered;
+      const goal = searching ? DISCOVERY_APPROACH : targets.sort((a, b) => Math.hypot(a.x - this.player.x, a.z - this.player.z) - Math.hypot(b.x - this.player.x, b.z - this.player.z))[0];
+      this.chapterHUD.waypoint(goal && !this.chapter.nearby(this.player) && !this.chapter.dialogue.length && this.state.phase === 'playing' ? this.world.projectChapterTarget(goal) : null, searching ? '육지 길을 따라 탐색하기' : goal ? CHAPTER_LABELS[goal.kind] : '');
     }
     this.hud.positionPlayer(this.world.projectPlayer(this.player));
     this.frames++; this.fpsTime += dt;

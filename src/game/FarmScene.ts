@@ -8,6 +8,8 @@ import { Player, PLOT_POSITIONS, type FarmTarget } from './Player';
 import { FollowCamera } from './FollowCamera';
 import { ChapterScenery } from './ChapterScenery';
 import type { ChapterOne, ChapterTarget } from './ChapterOne';
+import { ARRIVAL, LANDING_SITE, arrivalPhase } from './Arrival';
+import { planetSurface } from './Planet';
 
 const C = {
   grass: '#98be77', grassLight: '#b2cd83', dark: '#426b55', soil: '#aa7954',
@@ -155,10 +157,14 @@ export class FarmScene {
   readonly plots: PlotVisual[] = [];
   readonly ship: THREE.Group;
   readonly chapterScenery: ChapterScenery;
+  readonly legacyEnvironment = new THREE.Group();
+  openingPhase = 'SPACE_FLIGHT';
   readonly space = new THREE.Scene();
   readonly spaceCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
   private planet: THREE.Group;
   private travelShip: THREE.Group;
+  private flightFlame: THREE.Group;
+  private landingFlame: THREE.Group;
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
   private groundMaterial: THREE.MeshLambertMaterial;
@@ -224,6 +230,7 @@ export class FarmScene {
     this.sun = new THREE.DirectionalLight('#fff1d0', 1.75); this.sun.position.set(-12, 24, 10); this.scene.add(this.sun);
     this.camera.position.set(27, 31, 36); this.camera.lookAt(0, 0, 0);
     this.groundMaterial = new THREE.MeshLambertMaterial({ map: groundTexture(), color: '#ffffff' });
+    const existing = new Set(this.scene.children);
     this.terrain();
     this.researchBase(-7.4, -6.5);
     this.waterLevel = this.waterTank(-10, -0.3);
@@ -241,16 +248,22 @@ export class FarmScene {
     this.supplyPulse.rotation.y = Math.PI / 4;
     this.beacon = orb(this.scene, '#e8bb5a', 10, 2.7, 1.2, 0.18);
     this.decorations();
+    const shared = new Set<THREE.Object3D>([this.ship, this.beacon, this.supplyPulse, ...this.plots.map(p => p.root)]);
+    for (const child of [...this.scene.children]) if (!existing.has(child) && !shared.has(child)) this.legacyEnvironment.add(child);
+    this.scene.add(this.legacyEnvironment);
+    bake(this.legacyEnvironment, [this.waterLevel, ...this.targets]);
     this.plots.forEach(p => {
       bake(p.leaf); bake(p.bean); bake(p.seeds); bake(p.highlight);
       bake(p.root, [p.leaf, p.bean, p.seeds, p.highlight, p.marker, p.soil, ...this.targets]);
     });
-    bake(this.scene, [this.ship, this.waterLevel, this.beacon, this.supplyPulse, ...this.plots.map(p => p.root), ...this.targets]);
+    bake(this.scene, [this.legacyEnvironment, this.ship, this.waterLevel, this.beacon, this.supplyPulse, ...this.plots.map(p => p.root), ...this.targets]);
     this.makeAstronaut();
     this.chapterScenery = new ChapterScenery(this.scene, this.ship, this.body, this.arms[1]);
     this.planet = this.makeSpace();
     this.travelShip = this.spaceship(this.space, -4, -2, 3);
     this.travelShip.scale.setScalar(0.28); this.travelShip.rotation.z = -0.55;
+    this.flightFlame = this.makeExhaust(this.travelShip);
+    this.landingFlame = this.makeExhaust(this.ship);
     this.particleMesh = new THREE.InstancedMesh(boxGeo, new THREE.MeshBasicMaterial({ vertexColors: false }), 128);
     this.particleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.particleMesh.frustumCulled = false;
@@ -530,22 +543,26 @@ export class FarmScene {
   }
 
   private makeSpace() {
-    this.space.background = new THREE.Color('#0e252d');
+    this.space.background = new THREE.Color('#101c30');
     this.space.add(new THREE.HemisphereLight('#d5eac8', '#172c3a', 1.9));
     const light = new THREE.DirectionalLight('#ffe7ad', 3); light.position.set(-8, 10, 8); this.space.add(light);
     this.spaceCamera.position.set(0, 1, 19); this.spaceCamera.lookAt(0, 0, 0);
-    const p = group(this.space, 2, 0, -5);
-    orb(p, '#548e7d', 0, 0, 0, 4.5);
-    for (let i = 0; i < 28; i++) {
-      const phi = random() * Math.PI * 2, theta = random() * Math.PI;
-      orb(p, ['#8aa66e', '#699961', '#9ca776'][i % 3], Math.sin(theta) * Math.cos(phi) * 4.25, Math.cos(theta) * 4.25, Math.sin(theta) * Math.sin(phi) * 4.25, 0.65 + random() * 0.5, 0.5, 0.65);
-    }
+    const p = group(this.space, 3, 0, -5);
+    mesh(p, new THREE.SphereGeometry(1, 40, 24), new THREE.MeshLambertMaterial({ map: planetSurface() }), 0, 0, 0, 4.5, 4.5, 4.5);
+    orb(p, new THREE.MeshBasicMaterial({ color: '#81bbcf', transparent: true, opacity: 0.12, side: THREE.BackSide, depthWrite: false }), 0, 0, 0, 4.65);
     const stars = new Float32Array(180 * 3);
     for (let i = 0; i < stars.length; i += 3) { stars[i] = (random() - 0.5) * 70; stars[i + 1] = (random() - 0.5) * 45; stars[i + 2] = -15 - random() * 25; }
     const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(stars, 3));
     this.space.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: '#eadfbb', size: 0.07 })));
     orb(this.space, '#c8c4a0', -7, 3.5, -9, 0.9);
     return p;
+  }
+
+  private makeExhaust(parent: THREE.Group) {
+    const exhaust = group(parent, 0, -0.35, 0);
+    orb(exhaust, new THREE.MeshBasicMaterial({ color: '#efb76c', transparent: true, opacity: 0.75 }), 0, -0.65, 0, 0.32, 0.95, 0.32);
+    orb(exhaust, new THREE.MeshBasicMaterial({ color: '#d6f6fc' }), 0, -0.35, 0, 0.18, 0.65, 0.18);
+    return exhaust;
   }
 
   resize() {
@@ -627,7 +644,7 @@ export class FarmScene {
     const sightDistance = this.sightPoint.distanceTo(this.camera.position);
     this.sightRay.origin.copy(this.camera.position);
     this.sightRay.direction.copy(this.sightPoint).sub(this.camera.position).normalize();
-    this.occludedSilhouette.visible = this.occluders.some(box => {
+    this.occludedSilhouette.visible = this.legacyEnvironment.visible && this.occluders.some(box => {
       const hit = this.sightRay.intersectBox(box, this.sightHit);
       return !!hit && hit.distanceTo(this.camera.position) < sightDistance - 0.8;
     });
@@ -757,12 +774,19 @@ export class FarmScene {
   }
 
   render(state: GameState, dt: number, introTime = -1, chapter: ChapterOne | null = null, player?: Player) {
+    this.legacyEnvironment.visible = !chapter;
+    this.plots.forEach(plot => { plot.root.visible = !chapter; });
+    this.beacon.visible = !chapter; this.supplyPulse.visible = !chapter;
+    (this.scene.background as THREE.Color).set(chapter ? '#d4c7ac' : '#dcead1');
+    (this.scene.fog as THREE.Fog).color.copy(this.scene.background as THREE.Color);
     const effectDt = state.phase === 'paused' ? 0 : dt;
     this.elapsed += effectDt;
     this.updateHarvest(state.phase === 'playing' ? dt : 0);
     this.dryBlend += ((state.drought ? 1 : 0) - this.dryBlend) * Math.min(1, dt * 0.8);
     this.groundMaterial.color.set('#ffffff').lerp(this.dryColor, this.dryBlend * 0.45);
     this.sun.color.set('#fff1d0').lerp(this.drySunColor, this.dryBlend);
+    this.sun.intensity = chapter ? 1.35 : 1.75;
+    if (chapter) this.sun.color.set('#eee2cc');
     if (chapter?.complete) { this.groundMaterial.color.set('#f3ffdf'); this.sun.color.set('#fff5dc'); }
     const tankWater = Math.max(0, state.water - state.canWater);
     this.waterLevel.scale.y = Math.max(0.01, tankWater / 100) * 1.25;
@@ -796,20 +820,41 @@ export class FarmScene {
       this.particleMesh.instanceColor!.needsUpdate = true;
     }
     this.lastParticleCount = particleCount;
+    this.openingPhase = introTime < 0 ? 'EXPLORING' : arrivalPhase(introTime);
     if (chapter && player) {
       this.chapterScenery.update(chapter, player, this.elapsed, introTime);
-      this.ship.position.y = introTime >= 0 ? 0.2 + Math.pow(Math.max(0, 1 - introTime / 3.4), 2) * 13 : 0.2;
-      this.astronaut.visible = introTime < 0 || introTime >= 4.5;
-      if (introTime >= 4.5) {
-        const t = Math.min(1, (introTime - 4.5) / 1.6);
-        this.astronaut.position.set(7.4, 0.2, -6.25 + t * 1.3);
+      this.astronaut.visible = introTime < 0 || introTime >= ARRIVAL.exitAt;
+      if (introTime >= 0 && introTime < ARRIVAL.surfaceAt) {
+        const approach = THREE.MathUtils.clamp((introTime - ARRIVAL.flightEnd) / (ARRIVAL.surfaceAt - ARRIVAL.flightEnd), 0, 1);
+        const flight = Math.min(1, introTime / ARRIVAL.flightEnd);
+        this.planet.rotation.y = 0.7 + introTime * 0.035;
+        this.planet.scale.setScalar(1 + approach * 0.3);
+        this.travelShip.position.set(approach ? 1.5 * approach : -7 + flight * 7, approach ? 0.8 - approach * 0.7 : -1.2 + flight * 2, 3 - approach * 2.7);
+        this.travelShip.scale.setScalar(0.34 - approach * 0.18);
+        this.travelShip.rotation.set(0, 0, -1.05 + approach * 0.35);
+        this.flightFlame.scale.y = 0.8 + Math.sin(introTime * 28) * 0.12;
+        this.spaceCamera.position.set(0, 1 - approach, 21 - approach * 11.5);
+        this.spaceCamera.lookAt(1.5 + approach * 1.5, 0, -5);
+        this.renderer.render(this.space, this.spaceCamera);
+        return;
+      }
+      const descent = introTime < 0 ? 1 : THREE.MathUtils.clamp((introTime - ARRIVAL.surfaceAt) / (ARRIVAL.landedAt - ARRIVAL.surfaceAt), 0, 1);
+      this.ship.position.set(LANDING_SITE.x + (1 - descent) * 2.5, 0.2 + (1 - descent) ** 2 * 10, LANDING_SITE.z - (1 - descent) * 1.2);
+      this.ship.rotation.z = -(1 - descent) * 0.12;
+      this.landingFlame.visible = introTime >= ARRIVAL.surfaceAt && introTime < ARRIVAL.landedAt;
+      this.landingFlame.scale.y = 0.75 + Math.sin(introTime * 28) * 0.12;
+      if (introTime >= ARRIVAL.exitAt) {
+        const t = Math.min(1, (introTime - ARRIVAL.exitAt) / (ARRIVAL.duration - ARRIVAL.exitAt));
+        this.astronaut.position.set(LANDING_SITE.x, 0.2, LANDING_SITE.z + 1.05 + t * 1.55);
         this.body.rotation.y = 0;
-        this.legs.forEach((leg, i) => { leg.rotation.x = Math.sin(t * 13) * (i ? -0.3 : 0.3); });
+        this.legs.forEach((leg, i) => { leg.rotation.x = Math.sin(t * 16) * (i ? -0.35 : 0.35); });
+        this.arms.forEach((arm, i) => { arm.rotation.x = Math.sin(t * 16) * (i ? 0.3 : -0.3); });
       }
       if (chapter.carrying !== null && player.actionTime === 0) this.arms.forEach(arm => { arm.rotation.x = -0.95; });
       this.camera.zoom = 1; this.camera.updateProjectionMatrix();
       this.renderer.render(this.scene, this.camera);
     } else if (introTime >= 0 && introTime < 4.2) {
+      this.ship.position.set(7.4, 0.2, -7.2); this.ship.rotation.z = 0; this.landingFlame.visible = false;
       this.chapterScenery.update(null, player ?? new Player(), this.elapsed, introTime);
       this.astronaut.visible = true;
       const t = introTime / 4.2;
@@ -819,6 +864,7 @@ export class FarmScene {
       this.spaceCamera.position.z = 19 - t * 5;
       this.renderer.render(this.space, this.spaceCamera);
     } else {
+      this.ship.position.x = 7.4; this.ship.position.z = -7.2; this.ship.rotation.z = 0; this.landingFlame.visible = false;
       this.chapterScenery.update(null, player ?? new Player(), this.elapsed, introTime);
       this.astronaut.visible = true;
       this.ship.position.y = introTime >= 4.2 ? 0.2 + Math.pow(Math.max(0, 1 - (introTime - 4.2) / 2.8), 2) * 13 : 0.2;

@@ -1,7 +1,14 @@
 // World-space footprints shared by rendering, collision and interaction.
+import { LANDING_SITE, SHORE_WATER } from './Arrival';
 export interface Footprint { x: number; z: number; hx: number; hz: number }
 export interface FarmTarget extends Footprint { kind: 'plot' | 'tank' | 'supply'; id: number }
 export const PLOT_POSITIONS = [[-4.8, -0.9], [-0.3, -0.9], [4.2, -0.9], [-4.8, 3.6], [-0.3, 3.6], [4.2, 3.6]] as const;
+// Keep legacy plot IDs and saved chapter work stable; extend the abandoned farm northward.
+export const CHAPTER_PLOT_POSITIONS = [...PLOT_POSITIONS, [-4.8, -5.4], [-0.3, -5.4], [4.2, -5.4]] as const;
+const CHAPTER_OBSTACLES: Footprint[] = [
+  ...CHAPTER_PLOT_POSITIONS.map(([x, z]) => ({ x, z, hx: 1.86, hz: 1.71 })),
+  LANDING_SITE,
+];
 export const FARM_TARGETS: FarmTarget[] = [
   ...PLOT_POSITIONS.map(([x, z], id) => ({ kind: 'plot' as const, id, x, z, hx: 1.86, hz: 1.71 })),
   { kind: 'tank', id: -1, x: -10, z: -0.3, hx: 1.6, hz: 1.55 },
@@ -36,6 +43,7 @@ export class Player {
   walkTime = 0;
   actionTime = 0;
   action = '';
+  chapterMap = false;
   private keys = new Set<string>();
   private stickX = 0;
   private stickY = 0;
@@ -49,7 +57,10 @@ export class Player {
   stick(x: number, y: number) { this.stickX = x; this.stickY = y; }
   clearInput() { this.keys.clear(); this.stickX = this.stickY = 0; this.moving = false; }
   canStand(x: number, z: number) {
-    return Math.abs(x) <= 13.4 && z >= -10 && z <= 10.25 && OBSTACLES.every(rect => edgeDistance(x, z, rect) >= Player.radius);
+    const obstacles = this.chapterMap ? CHAPTER_OBSTACLES : OBSTACLES;
+    const inside = this.chapterMap ? x >= -14 && x <= 23.5 && z >= -10 && z <= 18 : Math.abs(x) <= 13.4 && z >= -10 && z <= 10.25;
+    const water = this.chapterMap && (((x - SHORE_WATER.x) / (SHORE_WATER.rx + Player.radius)) ** 2 + ((z - SHORE_WATER.z) / (SHORE_WATER.rz + Player.radius)) ** 2 < 1);
+    return inside && !water && obstacles.every(rect => edgeDistance(x, z, rect) >= Player.radius);
   }
   nearby(): FarmTarget | null {
     let closest: FarmTarget | null = null, distance = Player.reach;

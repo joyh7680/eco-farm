@@ -1,4 +1,5 @@
 import { edgeDistance, Player, type Footprint } from './Player';
+import { LANDING_EXIT } from './Arrival';
 
 export type ChapterStage = 'INTRO' | 'EXPLORE' | 'INSPECT_FARM' | 'CLEAR_WEEDS' | 'REMOVE_ROCKS' | 'TILL_SOIL' | 'CHAPTER_COMPLETE';
 export interface ChapterTarget extends Footprint { kind: 'inspect' | 'weed' | 'rock' | 'deposit' | 'soil'; id: number }
@@ -7,20 +8,22 @@ export const WEEDS = [[-5.9, -3.1], [-3.5, -3.1], [-1.1, -3.1], [1, -3.1], [4.4,
 export const ROCKS = [[-5.7, 1.4], [-0.3, 1.4], [4.2, 1.4]].map(([x, z], i) => point('rock', i, x, z));
 export const SOILS = [-4.8, -0.3, 4.2].map((x, i) => ({ ...point('soil', i, x, -0.9), hx: 1.86, hz: 1.71 }));
 export const INSPECT: ChapterTarget = { ...SOILS[1], kind: 'inspect', id: 0 };
+export const DISCOVERY_APPROACH: ChapterTarget = { ...point('inspect', -1, 8, 7), hx: 0.5, hz: 0.5 };
 export const DEPOSIT: ChapterTarget = { ...point('deposit', 0, 7.25, 4.65), hx: 0.65, hz: 0.65 };
 export const CHAPTER_SAVE_KEY = 'eco-farm.chapter-01.v1';
 export const CHAPTER_LABELS = { inspect: '농경지 조사하기', weed: '잡초 제거하기', rock: '돌 들어 올리기', deposit: '돌 내려놓기', soil: '괭이질하기' };
 export const CHAPTER_INTRO = [
   '초록 행성에 도착했습니다!',
-  '이곳은 한때 풍요로운 농장이었지만, 오랫동안 관리되지 않았어요.',
-  '농장을 다시 되살려 볼까요? 우선 주변을 조사해 보세요!',
+  '갈색 흙과 파란 물, 초록 식물이 확인됩니다.',
+  '우주선에서 내려 육지 길을 따라 주변을 탐색해 보세요!',
 ];
 interface StorageLike { getItem(key: string): string | null; setItem(key: string, value: string): void }
-interface SaveData { version: 1; stage: ChapterStage; weeds: boolean[]; rocks: boolean[]; soils: boolean[]; carrying: number | null; dialogue: string[]; x: number; z: number }
+interface SaveData { version: 1; stage: ChapterStage; discovered?: boolean; weeds: boolean[]; rocks: boolean[]; soils: boolean[]; carrying: number | null; dialogue: string[]; x: number; z: number }
 
 /** Chapter progress is independent of the existing crop/drought simulation. */
 export class ChapterOne {
   stage: ChapterStage = 'INTRO';
+  discovered = false;
   weeds = WEEDS.map(() => false);
   rocks = ROCKS.map(() => false);
   soils = SOILS.map(() => false);
@@ -29,7 +32,7 @@ export class ChapterOne {
   pending: ChapterTarget | null = null;
   storageFailed = false;
   private storage?: StorageLike;
-  private savedPosition = { x: 7.4, z: -4.95 };
+  private savedPosition = LANDING_EXIT;
 
   constructor(storage?: StorageLike) { this.storage = storage; }
   get complete() { return this.stage === 'CHAPTER_COMPLETE'; }
@@ -42,13 +45,13 @@ export class ChapterOne {
     return this.complete ? '3 / 3' : '—';
   }
   get objective() {
-    return { INTRO: '초록 행성에 착륙하기', EXPLORE: '빛나는 버려진 농경지 조사하기', INSPECT_FARM: 'AI와 농경지 상태 살펴보기', CLEAR_WEEDS: '잡초 5개 제거하기', REMOVE_ROCKS: this.carrying === null ? '돌 3개를 수거 장소로 운반하기' : '들고 있는 돌을 수거 장소에 내려놓기', TILL_SOIL: '괭이로 밭 3칸 일구기', CHAPTER_COMPLETE: '농경지 복구 완료!' }[this.stage];
+    return { INTRO: '초록 행성에 착륙하기', EXPLORE: this.discovered ? '발견한 농경지 가까이 가서 조사하기' : '육지 길을 따라 걸어서 주변 탐색하기', INSPECT_FARM: 'AI와 농경지 상태 살펴보기', CLEAR_WEEDS: '잡초 5개 제거하기', REMOVE_ROCKS: this.carrying === null ? '돌 3개를 수거 장소로 운반하기' : '들고 있는 돌을 수거 장소에 내려놓기', TILL_SOIL: '괭이로 밭 3칸 일구기', CHAPTER_COMPLETE: '농경지 복구 완료!' }[this.stage];
   }
   get lesson() {
     return { INTRO: 'ECO FARM — 초록 행성', EXPLORE: 'WASD / 방향키 또는 왼쪽 조이스틱으로 이동하세요.', INSPECT_FARM: '농경지의 상태를 먼저 살펴봐요.', CLEAR_WEEDS: '잡초는 작물과 물·영양분·빛을 두고 경쟁할 수 있어요.', REMOVE_ROCKS: '돌을 정리하면 작업 중 방해 요소를 줄이고 안전하게 밭을 준비할 수 있어요.', TILL_SOIL: '흙 상태·배수·작물 간격을 살펴봐요. 경운 방법과 필요성은 토양에 따라 달라요.', CHAPTER_COMPLETE: '다음 목표: 고장 난 물탱크를 복구하고 물을 확보하세요!' }[this.stage];
   }
   targets(): ChapterTarget[] {
-    if (this.stage === 'EXPLORE') return [INSPECT];
+    if (this.stage === 'EXPLORE') return this.discovered ? [INSPECT] : [];
     if (this.stage === 'CLEAR_WEEDS') return WEEDS.filter(t => !this.weeds[t.id]);
     if (this.stage === 'REMOVE_ROCKS') return this.carrying !== null ? [DEPOSIT] : ROCKS.filter(t => !this.rocks[t.id]);
     if (this.stage === 'TILL_SOIL') return SOILS.filter(t => !this.soils[t.id]);
@@ -60,6 +63,12 @@ export class ChapterOne {
   finishIntro(player: Player) {
     if (this.stage !== 'INTRO') return;
     this.stage = 'EXPLORE'; this.dialogue = [...CHAPTER_INTRO]; this.save(player);
+  }
+  discover(player: Player) {
+    if (this.stage !== 'EXPLORE' || this.discovered || this.dialogue.length || edgeDistance(player.x, player.z, { x: -0.3, z: -0.9, hx: 6.5, hz: 6.7 }) >= 2.4) return false;
+    this.discovered = true;
+    this.dialogue = ['버려진 농장을 발견했어요!', '이곳은 한때 풍요로운 농장이었지만, 오랫동안 관리되지 않았어요.', '가까이 가서 농경지의 상태를 조사해 볼까요?'];
+    this.save(player); return true;
   }
   nextDialogue(player: Player) {
     this.dialogue.shift();
@@ -95,7 +104,7 @@ export class ChapterOne {
     this.save(player); return t;
   }
   save(player: Player) {
-    const data: SaveData = { version: 1, stage: this.stage, weeds: this.weeds, rocks: this.rocks, soils: this.soils, carrying: this.carrying, dialogue: this.dialogue, x: player.x, z: player.z };
+    const data: SaveData = { version: 1, stage: this.stage, discovered: this.discovered, weeds: this.weeds, rocks: this.rocks, soils: this.soils, carrying: this.carrying, dialogue: this.dialogue, x: player.x, z: player.z };
     try { this.storage?.setItem(CHAPTER_SAVE_KEY, JSON.stringify(data)); this.storageFailed = !this.storage; }
     catch { this.storageFailed = true; }
   }
@@ -116,6 +125,7 @@ export class ChapterOne {
       if (derived && d.stage !== derived) return false;
       if (!['TILL_SOIL', 'CHAPTER_COMPLETE'].includes(d.stage) && d.soils.some(Boolean) || !['REMOVE_ROCKS', 'TILL_SOIL', 'CHAPTER_COMPLETE'].includes(d.stage) && d.rocks.some(Boolean)) return false;
       this.stage = d.stage; this.weeds = d.weeds; this.rocks = d.rocks; this.soils = d.soils; this.carrying = d.carrying; this.dialogue = d.dialogue;
+      this.discovered = !['INTRO', 'EXPLORE'].includes(d.stage) || d.discovered === true;
       if (this.stage === 'INSPECT_FARM' && !this.dialogue.length) this.stage = 'CLEAR_WEEDS';
       if (Number.isFinite(d.x) && Number.isFinite(d.z) && player.canStand(d.x, d.z)) { player.x = d.x; player.z = d.z; }
       else { player.x = this.savedPosition.x; player.z = this.savedPosition.z; }

@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { FARM_TARGETS, Player, edgeDistance } from './Player';
+import { CHAPTER_PLOT_POSITIONS, FARM_TARGETS, Player, edgeDistance } from './Player';
+import { LANDING_EXIT, LANDING_SITE, SHORE_WATER } from './Arrival';
 
 describe('character locomotion', () => {
+  it('matches the abandoned 3×3 map without invisible building or tree collisions', () => {
+    const p = new Player(); p.chapterMap = true;
+    expect(CHAPTER_PLOT_POSITIONS).toHaveLength(9);
+    for (const [x, z] of [[-7.4, -6.5], [9.6, 1.2], [-10, -0.3], [-6.9, 7.1], [12.1, -6]]) expect(p.canStand(x, z)).toBe(true);
+    for (const [x, z] of CHAPTER_PLOT_POSITIONS) expect(p.canStand(x, z)).toBe(false);
+    expect(p.canStand(LANDING_SITE.x, LANDING_SITE.z)).toBe(false);
+    expect(p.canStand(SHORE_WATER.x, SHORE_WATER.z)).toBe(false);
+    const start = [Math.round(LANDING_EXIT.x * 4), Math.round(LANDING_EXIT.z * 4)];
+    const step = 0.25, queue = [start], seen = new Set([start.join(',')]), reached = new Set<number>();
+    for (let i = 0; i < queue.length; i++) {
+      const [gx, gz] = queue[i];
+      CHAPTER_PLOT_POSITIONS.forEach(([x, z], id) => { if (edgeDistance(gx * step, gz * step, { x, z, hx: 1.86, hz: 1.71 }) < 0.8) reached.add(id); });
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = gx + dx, nz = gz + dz, key = `${nx},${nz}`;
+        if (!seen.has(key) && p.canStand(nx * step, nz * step)) { seen.add(key); queue.push([nx, nz]); }
+      }
+    }
+    expect(reached.size).toBe(9);
+    p.chapterMap = false; expect(p.canStand(9.6, 1.2)).toBe(false);
+  });
   it('moves in camera-relative directions with normalized diagonals', () => {
     const straight = new Player(), diagonal = new Player();
     straight.key('KeyD', true); diagonal.key('ArrowRight', true); diagonal.key('ArrowDown', true);

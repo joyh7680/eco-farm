@@ -19,7 +19,7 @@ async function session(width, height, touch) {
   const pump = ms => page.clock.runFor(ms);
   const read = () => page.evaluate(() => {
     const g = window.ecoGame;
-    return { chapter: g.chapter && {stage:g.chapter.stage,weeds:g.chapter.weeds,rocks:g.chapter.rocks,soils:g.chapter.soils,carrying:g.chapter.carrying,dialogue:g.chapter.dialogue,busy:g.chapter.busy}, x: g.player.x, z: g.player.z, phase: g.state.phase, time: g.state.time, tutorial: g.state.tutorial, water: g.state.water, can: g.state.canWater, money: g.state.money, inventory: g.state.inventory, delivered: g.state.delivered, dry: g.state.droughtDelivered, crops: g.state.plots.map(p => p.crop), target: g.target, action: g.contextAction() };
+    return { chapter: g.chapter && {stage:g.chapter.stage,discovered:g.chapter.discovered,weeds:g.chapter.weeds,rocks:g.chapter.rocks,soils:g.chapter.soils,carrying:g.chapter.carrying,dialogue:g.chapter.dialogue,busy:g.chapter.busy}, x: g.player.x, z: g.player.z, phase: g.state.phase, time: g.state.time, tutorial: g.state.tutorial, water: g.state.water, can: g.state.canWater, money: g.state.money, inventory: g.state.inventory, delivered: g.state.delivered, dry: g.state.droughtDelivered, crops: g.state.plots.map(p => p.crop), target: g.target, action: g.contextAction() };
   });
   const cdp = await context.newCDPSession(page);
   let held = [], finger = null;
@@ -67,6 +67,7 @@ async function session(width, height, touch) {
       let arrived = false;
       for (let i = 0; i < 450; i++) {
         const p = await read(), distance = Math.hypot(wx - p.x, wz - p.z);
+        if (p.chapter?.dialogue.length) { await stick(0, 0); await pump(150); return; }
         if (distance < 0.075) { arrived = true; break; }
         // A short look-ahead keeps discrete keyboard directions centered in narrow paths.
         const dx = Math.max(-0.16, Math.min(0.16, wx - p.x)), dz = Math.max(-0.16, Math.min(0.16, wz - p.z));
@@ -114,29 +115,47 @@ async function play(width, height, touch) {
     assert.equal((await read()).chapter.dialogue.length, 0);
   }
   async function reload() { await page.reload({ waitUntil: 'networkidle' }); await pump(300); }
+  async function explore() {
+    await walk(8, 7);
+    assert.equal((await read()).chapter.discovered, true);
+    await shots('discovery'); await dialogue();
+    await walk(-0.25, -3.25);
+  }
   const visuals = () => page.evaluate(() => {
     const s = ecoGame.world.chapterScenery;
     return { weeds: s.weeds.map(g => g.visible), rocks: s.rocks.map(g => g.visible), carried: s.carried.visible, rough: s.rough.map(g => g.visible), deposited: s.deposited.map(g => g.visible) };
   });
   try {
     assert.equal((await read()).chapter.stage, 'INTRO');
+    assert.equal(await page.evaluate(() => ecoGame.world.chapterScenery.plotCount), 9);
+    assert.equal(await page.evaluate(() => ecoGame.world.legacyEnvironment.visible), false);
+    assert.equal(await page.evaluate(() => ecoGame.player.canStand(9.6, 1.2)), true);
     assert.equal(await page.evaluate(() => ecoGame.world.camera.isOrthographicCamera), true);
     const angle = await page.evaluate(() => ecoGame.world.camera.quaternion.toArray());
-    await pump(1000); const high = await page.evaluate(() => ecoGame.world.ship.position.y);
+    await pump(1200); assert.equal(await page.evaluate(() => ecoGame.world.openingPhase), 'SPACE_FLIGHT');
+    await shots('space-flight');
+    await pump(3000); assert.equal(await page.evaluate(() => ecoGame.world.openingPhase), 'PLANET_APPROACH');
+    await shots('planet-approach');
+    await pump(3100); const high = await page.evaluate(() => ecoGame.world.ship.position.y);
+    assert.equal(await page.evaluate(() => ecoGame.world.openingPhase), 'LANDING');
+    assert.equal(await page.evaluate(() => ecoGame.world.chapterScenery.farm.visible), false);
     await shots('landing');
-    await pump(3600);
+    await pump(3400);
     assert.ok(await page.evaluate(() => ecoGame.world.ship.position.y) < high);
     assert.ok(await page.evaluate(() => ecoGame.world.chapterScenery.door.rotation.y) < -1);
     assert.equal(await page.evaluate(() => ecoGame.world.astronaut.visible), true);
-    assert.deepEqual(await page.evaluate(() => ecoGame.world.camera.quaternion.toArray()), angle);
+    assert.ok((await page.evaluate(() => ecoGame.world.camera.quaternion.toArray())).every((v,i)=>Math.abs(v-angle[i])<1e-10));
     await shots('emerging');
-    await pump(2100); assert.equal((await read()).chapter.stage, 'EXPLORE');
+    await pump(2000); assert.equal((await read()).chapter.stage, 'EXPLORE');
     await shots('arrival'); await dialogue();
+    assert.equal((await read()).chapter.discovered, false);
+    assert.equal(await page.evaluate(() => ecoGame.world.chapterScenery.farm.visible), false);
+    assert.ok(Math.hypot((await read()).x + .3,(await read()).z + .9)>18);
     if(touch) assert.equal(await page.locator('#interact').isDisabled(),true); else await act();
     assert.equal((await read()).chapter.stage, 'EXPLORE');
     if (!touch) { await page.keyboard.press('Digit1'); await pump(100); }
     assert.equal((await read()).money, 300); assert.equal((await read()).time, 0);
-    await walk(-0.25, -3.25); await act(); assert.equal((await read()).chapter.stage, 'INSPECT_FARM');
+    await explore(); await act(); assert.equal((await read()).chapter.stage, 'INSPECT_FARM');
     await dialogue(); assert.equal((await read()).chapter.stage, 'CLEAR_WEEDS');
     await reload(); assert.equal((await read()).chapter.stage, 'CLEAR_WEEDS');
     for (const [i, [x, z]] of [[-5.9,-3.1],[-3.5,-3.1],[-1.1,-3.1],[1,-3.1],[4.4,-3.1]].entries()) {
@@ -179,7 +198,7 @@ async function play(width, height, touch) {
     await click('#skip'); await dialogue();
     if (touch) {
       // The original joystick accepts a thumb while a second finger activates the action.
-      await walk(-0.25,-3.25);
+      await explore();
       const j=await page.locator('#joystick').boundingBox(),a=await page.locator('#interact').boundingBox();
       const thumb={id:1,x:j.x+j.width/2,y:j.y+j.height/2}, second={id:2,x:a.x+a.width/2,y:a.y+a.height/2};
       await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[thumb]});
@@ -191,11 +210,12 @@ async function play(width, height, touch) {
     await stick(.8,.6); await pump(250); await click('#pause'); const pos=await read(); await pump(1200);
     assert.equal((await read()).x,pos.x); await stick(0,0); await click('#resume');
     await click('#pause'); await click('#legacy-practice'); await click('#learn'); assert.equal((await read()).chapter,null);
+    assert.equal(await page.evaluate(() => ecoGame.world.legacyEnvironment.visible),true);
     assert.equal((await read()).tutorial,'plant');
     await walk(-4.75,1.25); await act(touch?'KeyE':'Digit1'); assert.equal((await read()).tutorial,'water');
     await click('#pause'); await click('#resume-chapter'); assert.ok((await read()).chapter);
     const render = await page.evaluate(()=>ecoGame.world.stats);
-    report.push({width,height,touch,result:'passed',render,checks:['fixed-camera landing and door','original astronaut emergence','inspection','5 weeds visibly removed','3 rocks carried and deposited','carrying reload','3 changed soil textures','clear and preview','save reload and reset','pause and movement','legacy crop regression',...(touch?['touch-only play and simultaneous touches']:[])]});
+    report.push({width,height,touch,result:'passed',render,checks:['space flight and brown/blue/green planet approach','fixed-camera landing away from farm','door and astronaut emergence','farm discovered only after walking inland','inspection','5 weeds visibly removed','3 rocks carried and deposited','carrying reload','3 changed soil textures','clear and preview','save reload and reset','pause and movement','legacy crop regression',...(touch?['touch-only play and simultaneous touches']:[])]});
   } catch(e) { await shots('failure'); throw e; } finally { await context.close(); }
 }
 
@@ -205,6 +225,9 @@ try {
   for (const [width,height] of [[768,1024],[844,390],[390,844]]) {
     const {context,page,pump,click,read,walk,act}=await session(width,height,true);
     await click('#skip');
+    while((await read()).chapter.dialogue.length) await click('#chapter-dialogue');
+    await walk(8,7);
+    assert.equal((await read()).chapter.discovered,true);
     while((await read()).chapter.dialogue.length) await click('#chapter-dialogue');
     await walk(-0.25,-3.25);await act();
     for(const selector of ['#chapter-mission','.utility-bar','#chapter-dialogue']) {
