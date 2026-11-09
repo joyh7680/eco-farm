@@ -8,6 +8,7 @@ export class GameAudio {
   play(kind: string) {
     if (!this.context || this.muted) return;
     const notes: Record<string, number[]> = { plant: [330, 494], water: [630, 480, 780], harvest: [523, 659, 784], deliver: [392, 523, 784], won: [523, 659, 784, 1047], drought: [220, 196, 220], lost: [330, 247, 196] };
+    notes.till = [190, 130]; notes.clear = [520, 690];
     (notes[kind] ?? [440]).forEach((freq, i) => {
       const oscillator = this.context!.createOscillator();
       const gain = this.context!.createGain();

@@ -102,6 +102,8 @@ async function session(width, height, touch) {
     await pump(150);
   }
   await click('#skip');
+  while (await page.evaluate(() => ecoGame.chapter.dialogue.length)) await click('#chapter-dialogue');
+  await click('#pause'); await click('#legacy-practice');
   return { context, page, pump, read, stick, walk, click, act, advance, cdp, cancelTouch };
 }
 

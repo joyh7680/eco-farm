@@ -156,7 +156,7 @@ export class GameHUD {
     window.addEventListener('resize', () => this.resetJoystick());
   }
 
-  private bindButton(button: HTMLButtonElement, activate: () => void) {
+  bindButton(button: HTMLButtonElement, activate: () => void) {
     let touchAt = -Infinity;
     button.addEventListener('pointerdown', e => {
       if (e.pointerType !== 'touch' || button.disabled) return;
@@ -221,6 +221,7 @@ export class GameHUD {
   mute(muted: boolean) { this.el('mute').innerHTML = icon(muted ? 'mute' : 'sound'); this.el('mute').setAttribute('aria-pressed', String(muted)); this.el('mute').setAttribute('aria-label', muted ? '소리 켜기' : '음소거'); }
 
   resetTransient() {
+    this.lastValues.clear(); this.lastAction = ''; this.lastSelected = -2;
     this.showHelp(false); this.toastUntil = 0;
     this.root.querySelectorAll('details[open]').forEach(el => el.removeAttribute('open'));
     this.el('tutorial-window').classList.remove('expanded');

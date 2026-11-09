@@ -6,6 +6,8 @@ import type { CropKind } from './GameConfig';
 import { TUTORIAL_PLOT } from './Tutorial';
 import { Player, PLOT_POSITIONS, type FarmTarget } from './Player';
 import { FollowCamera } from './FollowCamera';
+import { ChapterScenery } from './ChapterScenery';
+import type { ChapterOne, ChapterTarget } from './ChapterOne';
 
 const C = {
   grass: '#98be77', grassLight: '#b2cd83', dark: '#426b55', soil: '#aa7954',
@@ -152,6 +154,7 @@ export class FarmScene {
   readonly targets: THREE.Object3D[] = [];
   readonly plots: PlotVisual[] = [];
   readonly ship: THREE.Group;
+  readonly chapterScenery: ChapterScenery;
   readonly space = new THREE.Scene();
   readonly spaceCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
   private planet: THREE.Group;
@@ -244,6 +247,7 @@ export class FarmScene {
     });
     bake(this.scene, [this.ship, this.waterLevel, this.beacon, this.supplyPulse, ...this.plots.map(p => p.root), ...this.targets]);
     this.makeAstronaut();
+    this.chapterScenery = new ChapterScenery(this.scene, this.ship, this.body, this.arms[1]);
     this.planet = this.makeSpace();
     this.travelShip = this.spaceship(this.space, -4, -2, 3);
     this.travelShip.scale.setScalar(0.28); this.travelShip.rotation.z = -0.55;
@@ -635,13 +639,14 @@ export class FarmScene {
     this.body.position.y = player.moving && !this.reducedMotion ? Math.abs(Math.sin(player.walkTime)) * 0.07 : 0;
     this.body.rotation.x = player.actionTime > 0 ? action * 0.23 : 0;
     this.legs.forEach((leg, i) => { leg.rotation.x = walk * (i ? -1 : 1); });
-    this.arms.forEach((arm, i) => { arm.rotation.x = player.actionTime > 0 ? -action * 1.2 : walk * (i ? 1 : -1); });
+    this.arms.forEach((arm, i) => { arm.rotation.x = player.actionTime > 0 ? -action * (player.action === 'soil' ? 2.1 : 1.2) : walk * (i ? 1 : -1); });
     this.wateringCan.visible = player.actionTime > 0 && ['water', 'refill'].includes(player.action);
     this.targetRing.visible = !!target;
     if (target) this.targetRing.position.set(target.x, 0.29, target.z);
   }
 
   projectPlayer(player: Player) { return this.projectPosition(new THREE.Vector3(player.x, 3.15, player.z)); }
+  projectChapterTarget(target: ChapterTarget) { return this.projectPosition(new THREE.Vector3(target.x, 1.2, target.z)); }
   projectTarget(target: FarmTarget) { return this.projectPosition(new THREE.Vector3(target.x, target.kind === 'plot' ? 0.7 : 3.7, target.z)); }
 
   hit(clientX: number, clientY: number): { plot?: number; delivery?: boolean; tank?: boolean } | null {
@@ -711,8 +716,10 @@ export class FarmScene {
 
   refillEffect() { this.burst(-1, 'refill'); }
 
-  burst(id: number, kind: string) {
-    const origin = id >= 0 ? this.plots[id].root.position : kind === 'land' ? this.ship.position : kind === 'refill' ? new THREE.Vector3(-10, 1, -0.3) : new THREE.Vector3(9.6, 1, 1.2);
+  chapterBurst(target: ChapterTarget) { this.burst(-1, target.kind, new THREE.Vector3(target.x, 0.4, target.z)); }
+
+  burst(id: number, kind: string, position?: THREE.Vector3) {
+    const origin = position ?? (id >= 0 ? this.plots[id].root.position : kind === 'land' ? this.ship.position : kind === 'refill' ? new THREE.Vector3(-10, 1, -0.3) : new THREE.Vector3(9.6, 1, 1.2));
     const water = kind === 'water' || kind === 'refill';
     const n = water ? 24 : kind === 'won' ? 80 : 22;
     let used = 0;
@@ -725,7 +732,7 @@ export class FarmScene {
       p.vy = water ? -2 : 2 + random() * 3;
       p.max = p.life = 0.6 + random() * 0.65;
       p.size = water ? 0.09 : 0.12;
-      p.color.set(water ? '#a7efef' : kind === 'plant' ? '#c3de81' : kind === 'land' ? '#d9cb9d' : ['#f7d572', '#e7a8b8', '#b7d783'][used % 3]);
+      p.color.set(water ? '#a7efef' : kind === 'soil' ? '#9b7049' : kind === 'weed' ? '#8caa61' : kind === 'plant' ? '#c3de81' : kind === 'land' ? '#d9cb9d' : ['#f7d572', '#e7a8b8', '#b7d783'][used % 3]);
       if (++used >= n) break;
     }
   }
@@ -749,20 +756,22 @@ export class FarmScene {
     (v.marker.material as THREE.MeshLambertMaterial).color.copy(crop.moisture < 15 || crop.dead ? this.warningColor : this.readyColor);
   }
 
-  render(state: GameState, dt: number, introTime = -1) {
+  render(state: GameState, dt: number, introTime = -1, chapter: ChapterOne | null = null, player?: Player) {
     const effectDt = state.phase === 'paused' ? 0 : dt;
     this.elapsed += effectDt;
     this.updateHarvest(state.phase === 'playing' ? dt : 0);
     this.dryBlend += ((state.drought ? 1 : 0) - this.dryBlend) * Math.min(1, dt * 0.8);
     this.groundMaterial.color.set('#ffffff').lerp(this.dryColor, this.dryBlend * 0.45);
     this.sun.color.set('#fff1d0').lerp(this.drySunColor, this.dryBlend);
+    if (chapter?.complete) { this.groundMaterial.color.set('#f3ffdf'); this.sun.color.set('#fff5dc'); }
     const tankWater = Math.max(0, state.water - state.canWater);
     this.waterLevel.scale.y = Math.max(0.01, tankWater / 100) * 1.25;
     this.waterLevel.position.y = 1.425 + tankWater / 100 * 0.625;
+    if (chapter) this.waterLevel.scale.y = 0.01;
     this.beacon.scale.setScalar(0.15 + Math.sin(this.elapsed * 3) * 0.03);
     this.plots.forEach((v, i) => {
       const guided = !!state.tutorial && !['deliver', 'complete'].includes(state.tutorial) && i === TUTORIAL_PLOT;
-      v.highlight.visible = guided || !state.tutorial && state.selected === i;
+      v.highlight.visible = chapter ? i < 3 && (chapter.stage === 'TILL_SOIL' || chapter.complete) : guided || !state.tutorial && state.selected === i;
       v.highlight.scale.setScalar(guided ? 1.03 + Math.sin(this.elapsed * 4) * 0.025 : 1);
       this.updateCrop(v, state.phase === 'menu' ? this.previewCrops[i] : state.plots[i].crop, this.elapsed);
       if (state.phase === 'menu') v.marker.visible = false;
@@ -787,7 +796,22 @@ export class FarmScene {
       this.particleMesh.instanceColor!.needsUpdate = true;
     }
     this.lastParticleCount = particleCount;
-    if (introTime >= 0 && introTime < 4.2) {
+    if (chapter && player) {
+      this.chapterScenery.update(chapter, player, this.elapsed, introTime);
+      this.ship.position.y = introTime >= 0 ? 0.2 + Math.pow(Math.max(0, 1 - introTime / 3.4), 2) * 13 : 0.2;
+      this.astronaut.visible = introTime < 0 || introTime >= 4.5;
+      if (introTime >= 4.5) {
+        const t = Math.min(1, (introTime - 4.5) / 1.6);
+        this.astronaut.position.set(7.4, 0.2, -6.25 + t * 1.3);
+        this.body.rotation.y = 0;
+        this.legs.forEach((leg, i) => { leg.rotation.x = Math.sin(t * 13) * (i ? -0.3 : 0.3); });
+      }
+      if (chapter.carrying !== null && player.actionTime === 0) this.arms.forEach(arm => { arm.rotation.x = -0.95; });
+      this.camera.zoom = 1; this.camera.updateProjectionMatrix();
+      this.renderer.render(this.scene, this.camera);
+    } else if (introTime >= 0 && introTime < 4.2) {
+      this.chapterScenery.update(null, player ?? new Player(), this.elapsed, introTime);
+      this.astronaut.visible = true;
       const t = introTime / 4.2;
       this.planet.rotation.y = this.elapsed * 0.04;
       this.planet.scale.setScalar(0.8 + t * 0.5);
@@ -795,6 +819,8 @@ export class FarmScene {
       this.spaceCamera.position.z = 19 - t * 5;
       this.renderer.render(this.space, this.spaceCamera);
     } else {
+      this.chapterScenery.update(null, player ?? new Player(), this.elapsed, introTime);
+      this.astronaut.visible = true;
       this.ship.position.y = introTime >= 4.2 ? 0.2 + Math.pow(Math.max(0, 1 - (introTime - 4.2) / 2.8), 2) * 13 : 0.2;
       if (introTime >= 4.2) {
         const t = Math.min(1, (introTime - 4.2) / 3.3);

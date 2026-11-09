@@ -15,7 +15,9 @@ try {
     await page.clock.pauseAt(new Date('2026-11-09T00:00:01Z'));
     await page.goto(`${url}/?test`, { waitUntil: 'networkidle' });
     const click = async selector => { if (touch) await page.locator(selector).tap(); else await page.locator(selector).click(); await page.clock.runFor(150); };
-    await click('#skip'); await click('#skip-tutorial'); await page.clock.runFor(2000);
+    await click('#skip');
+    while (await page.evaluate(() => ecoGame.chapter.dialogue.length)) await click('#chapter-dialogue');
+    await click('#pause'); await click('#legacy-practice'); await click('#skip-tutorial'); await page.clock.runFor(2000);
     const before = await page.evaluate(() => ({ x: ecoGame.world.camera.position.x, top: ecoGame.world.camera.top }));
     await page.keyboard.down('KeyD'); await page.clock.runFor(350); await page.keyboard.up('KeyD'); await page.clock.runFor(500);
     const following = await page.evaluate(() => ({ x: ecoGame.player.x, cameraX: ecoGame.world.camera.position.x }));
@@ -67,7 +69,9 @@ try {
   // Real wall-clock sample, independent of deterministic gameplay clock tests.
   const page = await browser.newPage({ viewport: { width: 1024, height: 768 }, hasTouch: true, deviceScaleFactor: 2 });
   await page.goto(`${url}/?test`, { waitUntil: 'networkidle' });
-  await page.locator('#skip').tap(); await page.locator('#skip-tutorial').tap();
+  await page.locator('#skip').tap();
+  while (await page.evaluate(() => ecoGame.chapter.dialogue.length)) await page.locator('#chapter-dialogue').tap();
+  await page.locator('#pause').tap(); await page.locator('#legacy-practice').tap(); await page.locator('#skip-tutorial').tap();
   await page.evaluate(() => { for (let i = 0; i < 6; i++) ecoGame.state.act(i, i % 2 ? 'bean' : 'leaf'); for (const plot of ecoGame.state.plots) plot.crop.growth = 1; });
   const performanceSample = await page.evaluate(() => new Promise(resolve => {
     const times = []; let previous = performance.now();

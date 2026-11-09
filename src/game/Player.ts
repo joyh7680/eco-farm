@@ -59,7 +59,7 @@ export class Player {
     }
     return closest;
   }
-  inReach(target: FarmTarget) { return edgeDistance(this.x, this.z, target) < Player.reach; }
+  inReach(target: Footprint) { return edgeDistance(this.x, this.z, target) < Player.reach; }
   perform(action: string, target: Footprint) {
     this.action = action; this.actionTime = 0.48;
     this.angle = Math.atan2(target.x - this.x, target.z - this.z);

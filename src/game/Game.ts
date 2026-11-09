@@ -5,6 +5,8 @@ import { GameHUD } from '../ui/GameHUD';
 import { CONFIG, type Action, type CropKind } from './GameConfig';
 import { TUTORIAL_PLOT } from './Tutorial';
 import { FARM_TARGETS, Player, type FarmTarget } from './Player';
+import { ChapterOne, CHAPTER_LABELS, type ChapterTarget } from './ChapterOne';
+import { ChapterHUD } from '../ui/ChapterHUD';
 
 export class Game {
   readonly state = new GameState();
@@ -12,6 +14,10 @@ export class Game {
   readonly hud: GameHUD;
   readonly audio = new GameAudio();
   readonly player = new Player();
+  chapter: ChapterOne | null = null;
+  readonly chapterHUD: ChapterHUD;
+  private saveTime = 0;
+  private chapterStorage?: Storage;
   seed: CropKind = 'leaf';
   get target() { return this.player.nearby(); }
   private lastTime = 0;
@@ -28,6 +34,17 @@ export class Game {
   constructor(container: HTMLElement) {
     this.world = new FarmScene(container);
     this.hud = new GameHUD(container);
+    this.chapterHUD = new ChapterHUD(this.hud);
+    try { this.chapterStorage = window.localStorage; } catch { /* Storage may be disabled. */ }
+    this.chapterHUD.onDialogue = () => this.advanceDialogue();
+    this.chapterHUD.onReset = () => this.start(true);
+    this.chapterHUD.onResumeChapter = () => this.start();
+    this.chapterHUD.onLegacy = () => {
+      this.chapter?.save(this.player); this.chapter = null;
+      this.state.reset('briefing'); this.world.resetEffects(); this.resetPlayer();
+      this.hud.resetTransient(); this.accumulator = 0; this.hud.update(this.state);
+      this.chapterHUD.update(null, null, false, -1);
+    };
     this.hud.onContinue = () => this.beginTutorial();
     this.hud.onStartMission = () => this.beginFarming();
     this.hud.onHelp = () => this.openHelp();
@@ -41,7 +58,7 @@ export class Game {
     this.hud.onDeliver = () => this.deliver();
     this.hud.onInteract = () => this.interact();
     this.hud.onUse = action => this.interact(action === 'leaf' ? this.seed : action);
-    this.hud.onMove = (x, y) => this.player.stick(x, y);
+    this.hud.onMove = (x, y) => { if (this.state.phase === 'playing' && !this.chapter?.dialogue.length) this.player.stick(x, y); };
     this.hud.onPause = () => this.pause();
     this.hud.onMute = () => { this.audio.muted = !this.audio.muted; this.hud.mute(this.audio.muted); };
     this.hud.onQuality = () => { const high = this.world.toggleQuality(); this.hud.el('quality').textContent = high ? '선명' : '자동'; };
@@ -53,12 +70,14 @@ export class Game {
     };
     this.world.renderer.domElement.addEventListener('pointerdown', e => {
       if (this.state.phase !== 'playing' || e.button > 0) return;
+      if (this.chapter) { this.interactChapter(); return; }
       const target = this.world.hit(e.clientX, e.clientY);
       const facility = target?.delivery ? FARM_TARGETS.find(t => t.kind === 'supply') : target?.tank ? FARM_TARGETS.find(t => t.kind === 'tank') : target?.plot !== undefined ? FARM_TARGETS[target.plot] : null;
       if (facility) this.interact(undefined, facility);
     });
     this.world.renderer.domElement.addEventListener('pointermove', e => {
       if (this.state.phase !== 'playing') return;
+      if (this.chapter) { this.world.renderer.domElement.style.cursor = this.chapter.nearby(this.player) ? 'pointer' : 'default'; return; }
       const hit = this.world.hit(e.clientX, e.clientY);
       const target = hit?.plot !== undefined ? FARM_TARGETS[hit.plot] : hit?.delivery ? FARM_TARGETS[7] : hit?.tank ? FARM_TARGETS[6] : null;
       this.world.renderer.domElement.style.cursor = target && this.player.inReach(target) ? 'pointer' : 'default';
@@ -73,10 +92,16 @@ export class Game {
     window.addEventListener('keydown', e => {
       if (movement.has(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        if (this.state.phase === 'playing' && !this.hud.helpOpen) this.player.key(e.code, true);
+        if (this.state.phase === 'playing' && !this.hud.helpOpen && !this.chapter?.dialogue.length) this.player.key(e.code, true);
         return;
       }
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (this.chapter?.dialogue.length && this.state.phase === 'playing' && ['Enter', 'Space', 'Escape'].includes(e.code)) {
+        e.preventDefault();
+        if (e.code === 'Escape') { while (this.chapter.dialogue.length) this.chapter.nextDialogue(this.player); this.clearInput(); }
+        else this.advanceDialogue();
+        return;
+      }
       if (e.target instanceof HTMLButtonElement && ['Space', 'Enter'].includes(e.code)) return;
       if (this.hud.helpOpen) { if (e.code === 'Escape') { e.preventDefault(); this.closeHelp(); } return; }
       if (this.state.phase === 'briefing') { if (e.code === 'Enter') { e.preventDefault(); this.beginTutorial(); } return; }
@@ -90,24 +115,39 @@ export class Game {
       if (e.code === 'KeyE') { e.preventDefault(); this.interact(); }
     });
     document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.chapter?.save(this.player);
       if (document.hidden && this.state.phase === 'playing') { this.hiddenPaused = true; this.pause(); }
       if (!document.hidden) { this.lastTime = 0; if (this.hiddenPaused) { this.hiddenPaused = false; this.hud.toast('탭을 비운 동안 농장을 일시정지했어요. 계속 가꾸기를 눌러주세요.'); } }
     });
+    window.addEventListener('pagehide', () => this.chapter?.save(this.player));
     this.start();
-    this.world.render(this.state, 0, 0);
+    this.world.render(this.state, 0, this.state.phase === 'intro' ? 0 : -1, this.chapter, this.player);
     requestAnimationFrame(this.frame);
   }
 
-  start() {
+  start(resetChapter = false) {
     this.state.reset('intro'); this.world.resetEffects();
     this.resetPlayer();
+    this.player.x = 7.4; this.player.z = -4.95;
+    this.chapter = new ChapterOne(this.chapterStorage);
+    if (!this.chapterStorage) this.chapter.storageFailed = true;
+    if (!resetChapter) this.chapter.load(this.player);
+    if (this.chapter.stage !== 'INTRO') this.state.phase = 'playing';
+    this.chapter.save(this.player);
     this.hud.resetTransient(); this.hiddenPaused = false; this.helpResume = false;
     this.introTime = 0; this.landed = false; this.accumulator = 0;
     this.hud.update(this.state);
+    this.chapterHUD.update(this.chapter, null, false, 0);
   }
 
   finishIntro() {
     if (this.state.phase !== 'intro') return;
+    if (this.chapter) {
+      this.introTime = 6.5; this.state.phase = 'playing'; this.accumulator = 0;
+      this.player.x = 7.4; this.player.z = -4.95;
+      this.chapter.finishIntro(this.player); this.clearInput();
+      this.world.burst(-1, 'land'); this.hud.update(this.state); return;
+    }
     this.introTime = CONFIG.introDuration; this.state.phase = 'briefing'; this.accumulator = 0;
     this.world.burst(-1, 'land'); this.hud.update(this.state);
   }
@@ -121,6 +161,7 @@ export class Game {
   }
 
   beginTutorial() {
+    if (this.chapter) return;
     this.state.beginTutorial(); this.world.resetEffects(); this.hud.resetTransient();
     this.resetPlayer();
     this.accumulator = 0; this.hiddenPaused = false; this.helpResume = false;
@@ -128,6 +169,7 @@ export class Game {
   }
 
   openHelp() {
+    if (this.chapter) { this.hud.toast(this.chapter.lesson, 6000); return; }
     if (this.hud.helpOpen || !['playing', 'paused'].includes(this.state.phase)) return;
     this.helpResume = this.state.phase === 'playing';
     this.clearInput();
@@ -150,6 +192,7 @@ export class Game {
   }
 
   selectTool(action: Action) {
+    if (this.chapter) return;
     const message = this.state.selectTool(action);
     if (message) this.hud.toast(message);
     else this.audio.play('click');
@@ -179,6 +222,7 @@ export class Game {
   }
 
   interact(action?: Action, target = this.target) {
+    if (this.chapter) { if (!action) this.interactChapter(); return; }
     if (this.state.phase !== 'playing' || this.hud.helpOpen || this.player.actionTime > 0) return;
     if (!target || !this.player.inReach(target)) { this.hud.toast('대상 가까이 이동하세요. WASD / 방향키 또는 왼쪽 조이스틱을 사용해요.', 2200); return; }
     if (action && target.kind !== 'plot') { this.hud.toast('시설은 E 또는 큰 행동 버튼으로 이용하세요.'); return; }
@@ -206,6 +250,25 @@ export class Game {
     this.processEvents(); this.hud.update(this.state);
   }
 
+  private advanceDialogue() {
+    if (!this.chapter || this.state.phase !== 'playing' || !this.chapter.dialogue.length) return;
+    this.clearInput(); this.chapter.nextDialogue(this.player); this.audio.play('click');
+  }
+
+  private interactChapter() {
+    if (!this.chapter || this.state.phase !== 'playing') return;
+    if (this.chapter.begin(this.player)) this.clearInput();
+    else if (!this.chapter.dialogue.length && !this.chapter.busy) this.hud.toast('빛나는 대상 가까이 이동한 뒤 E / 행동 버튼을 눌러주세요.');
+  }
+
+  private chapterEffect(target: ChapterTarget) {
+    if (!this.chapter) return;
+    this.audio.play(target.kind === 'weed' ? 'clear' : target.kind === 'soil' ? 'till' : 'deliver');
+    this.world.chapterBurst(target);
+    if (this.chapter.dialogue.length) this.clearInput();
+    if (this.chapter.complete) { for (let i = 0; i < 3; i++) this.world.burst(i, 'won'); this.audio.play('won'); }
+  }
+
   private processEvents() {
     for (const event of this.state.events.splice(0)) {
       this.audio.play(event.type);
@@ -226,16 +289,24 @@ export class Game {
     this.lastTime = now;
     if (this.state.phase === 'intro') {
       if (!document.hidden) this.introTime += dt;
-      this.hud.intro(this.introTime);
-      if (this.introTime >= 7 && !this.landed) { this.landed = true; this.world.burst(-1, 'land'); this.audio.play('deliver'); }
-      if (this.introTime >= CONFIG.introDuration) this.finishIntro();
+      if (!this.chapter) this.hud.intro(this.introTime);
+      if (this.introTime >= (this.chapter ? 3.4 : 7) && !this.landed) { this.landed = true; this.world.burst(-1, 'land'); this.audio.play('deliver'); }
+      if (this.introTime >= (this.chapter ? 6.5 : CONFIG.introDuration)) this.finishIntro();
     }
     if (this.state.phase === 'playing') {
-      this.player.update(dt);
-      this.state.selected = this.target?.kind === 'plot' ? this.target.id : -1;
-      this.accumulator += dt;
-      while (this.accumulator >= 0.05) { this.state.update(0.05); this.accumulator -= 0.05; }
-      this.processEvents();
+      if (this.chapter) {
+        if (!this.chapter.dialogue.length) this.player.update(dt);
+        const finished = this.chapter.finishWork(this.player); if (finished) this.chapterEffect(finished);
+        this.state.selected = -1;
+        this.saveTime += dt;
+        if (this.saveTime >= 1) { this.chapter.save(this.player); this.saveTime = 0; }
+      } else {
+        this.player.update(dt);
+        this.state.selected = this.target?.kind === 'plot' ? this.target.id : -1;
+        this.accumulator += dt;
+        while (this.accumulator >= 0.05) { this.state.update(0.05); this.accumulator -= 0.05; }
+        this.processEvents();
+      }
     }
     this.world.view.update(this.player, ['playing', 'paused'].includes(this.state.phase), dt);
     this.world.adaptResolution(dt, this.state.phase === 'playing');
@@ -243,13 +314,19 @@ export class Game {
     this.hudTime += dt;
     if (this.hudTime >= 0.1) {
       this.hud.update(this.state);
-      this.hud.updateInteraction(this.state, this.target, this.contextAction(), this.seed, this.player.actionTime > 0);
+      if (!this.chapter) this.hud.updateInteraction(this.state, this.target, this.contextAction(), this.seed, this.player.actionTime > 0);
+      this.chapterHUD.update(this.chapter, this.chapter?.nearby(this.player) ?? null, this.state.phase === 'paused', this.introTime);
       this.hudTime = 0;
     }
     if (this.state.tutorial) this.hud.positionGuide(this.state.tutorial === 'deliver' ? this.world.projectTarget(FARM_TARGETS[7]) : this.world.projectPlot(TUTORIAL_PLOT));
     this.hud.positionCrops(this.state, this.world, this.world.projectPlayer(this.player));
-    this.world.updatePlayer(this.player, this.state.phase === 'playing' ? this.target : null, this.state.phase === 'paused' ? 0 : dt);
-    this.world.render(this.state, dt, this.state.phase === 'intro' ? this.introTime : -1);
+    this.world.updatePlayer(this.player, !this.chapter && this.state.phase === 'playing' ? this.target : null, this.state.phase === 'paused' ? 0 : dt);
+    this.world.render(this.state, dt, this.state.phase === 'intro' ? this.introTime : -1, this.chapter, this.player);
+    if (this.chapter) {
+      const targets = this.chapter.targets();
+      const goal = targets.sort((a, b) => Math.hypot(a.x - this.player.x, a.z - this.player.z) - Math.hypot(b.x - this.player.x, b.z - this.player.z))[0];
+      this.chapterHUD.waypoint(goal && !this.chapter.nearby(this.player) && !this.chapter.dialogue.length && this.state.phase === 'playing' ? this.world.projectChapterTarget(goal) : null, goal ? CHAPTER_LABELS[goal.kind] : '');
+    }
     this.hud.positionPlayer(this.world.projectPlayer(this.player));
     this.frames++; this.fpsTime += dt;
     if (this.fpsTime >= 1) { this.fps = Math.round(this.frames / this.fpsTime); this.frames = 0; this.fpsTime = 0; }
