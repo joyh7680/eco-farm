@@ -26,6 +26,7 @@ export class GameHUD {
   onPause = () => {};
   onMute = () => {};
   onQuality = () => {};
+  onView = () => {};
   onDeliver = () => {};
   onAction = (_action: Action) => {};
   onApply = () => {};
@@ -36,30 +37,22 @@ export class GameHUD {
 
   constructor(container: HTMLElement) {
     this.root = document.createElement('div'); this.root.id = 'ui'; container.append(this.root);
+    this.root.dataset.touch = String(navigator.maxTouchPoints > 0);
     this.root.innerHTML = `
       <div class="vignette"></div>
       <header class="top-hud">
-        <div class="brand"><span class="brand-icon">${icon('sprout')}</span><div><b>ECO FARM<span class="brand-dot">®</span></b><small>AGRIA–7 · FARM RESTORATION</small></div></div>
+        <div class="brand">${icon('sprout')}<b>ECO FARM</b><span>작은 초록을 가꾸는 하루</span></div>
         <div class="resource-group">
-          <div class="resource water-resource">${icon('drop')}<div><small>전체 물 · 탱크 + 물뿌리개</small><strong><span id="water">100</span><em> / 100</em></strong><small>휴대 <b id="can-water">20</b>/30 · 탱크 <b id="tank-water">80</b></small></div><div class="resource-track"><i id="water-meter"></i></div></div>
-          <div class="resource">${icon('coin')}<div><small>보유 자금</small><strong><span id="money">300</span><em> G</em></strong></div></div>
-          <div class="resource cargo-resource"><div><small>보급 기지 보관함 · <span id="inventory">0</span>개</small><div class="crop-cargo"><span data-crop="leaf">${icon('leaf')}달빛 상추 <b id="inventory-leaf">0</b></span><span data-crop="bean">${icon('bean')}별빛 콩 <b id="inventory-bean">0</b></span></div></div></div>
+          <details class="pocket water-resource"><summary aria-label="물뿌리개와 물탱크 잔량">${icon('water')}<div><strong><span id="can-water">20</span><em>/30</em></strong><small>전체 물 <b id="water">100</b></small></div></summary><div class="pocket-content"><b>물탱크 <span id="tank-water">80</span></b><p>가까이 가서 물을 채워요.<br>전체 물은 한정되어 있어요.</p><div class="resource-track"><i id="water-meter"></i></div></div></details>
+          <div class="pocket money-resource">${icon('coin')}<strong><span id="money">300</span><em>G</em></strong></div>
+          <details class="pocket cargo-resource"><summary aria-label="보급 기지 보관함">${icon('delivery')}<strong id="inventory">0</strong></summary><div class="pocket-content"><b>보급 기지 보관함</b><div class="crop-cargo"><span data-crop="leaf">${icon('leaf')}달빛 상추 <b id="inventory-leaf">0</b></span><span data-crop="bean">${icon('bean')}별빛 콩 <b id="inventory-bean">0</b></span></div><p>기지에 방문해 납품하세요.</p></div></details>
         </div>
-        <div class="time-resource"><span class="live-dot"></span><div><small>남은 임무 시간</small><strong id="timer">08:00</strong></div></div>
       </header>
-
-      <section class="mission-widget play-only" aria-label="미션 목표">
-        <div class="eyebrow"><span class="tiny-square"></span> MISSION 01 <span class="mission-status" id="mission-status">진행 중</span></div>
-        <h2>가뭄 속 첫 수확</h2>
-        <div class="objective"><span>보급 기지에 작물 납품</span><b><span id="delivered">0</span><em> / 4</em></b></div>
-        <div class="mission-progress"><i id="delivery-meter"></i><span></span><span></span><span></span></div>
-        <div class="sub-objective"><span id="drought-check">◇</span> 가뭄 이후 수확·납품 <b><span id="dry-delivered">0</span> / 2</b></div>
-        <small class="mission-weather" id="mission-weather">가뭄까지 70초</small>
-      </section>
-
-      <div class="world-status play-only"><span class="weather-symbol">${icon('sun')}</span><div><small>아그리아–7 기상 관측</small><b id="weather">맑음 · 생육에 적합</b><span id="weather-sub">건조 전선 접근 중</span></div></div>
-      <div class="world-caption play-only"><i></i> AGRIA–7 <span>35° 07′ N / SECTOR 01</span></div>
-      <div class="map-label play-only"><span>농업 복구 구역</span><b>THE GREEN FRONTIER</b></div>
+      <details class="mission-widget play-only" aria-label="미션 목표">
+        <summary><span class="mission-leaf">${icon('sprout')}</span><div><small>오늘의 작은 임무</small><b>첫 수확 <span id="delivered">0</span><em>/4</em></b></div><span class="time-resource" id="timer">08:00</span><span class="disclosure">⌄</span></summary>
+        <div class="mission-body"><div class="eyebrow">가뭄 속 첫 수확 <span id="mission-status">진행 중</span></div><div class="mission-progress"><i id="delivery-meter"></i></div><div class="sub-objective"><span id="drought-check">◇</span> 가뭄 이후 수확·납품 <b><span id="dry-delivered">0</span> / 2</b></div><small id="mission-weather">가뭄까지 70초</small></div>
+      </details>
+      <div hidden><span id="weather"></span><span id="weather-sub"></span></div>
       <div class="drought-alert" id="drought-alert" role="alert"><span>!</span><div><b>환경 경고 · 가뭄 발생</b><p>수분이 더 빠르게 감소합니다. 남은 물로 작물을 지켜주세요.</p></div></div>
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -78,20 +71,20 @@ export class GameHUD {
           <button class="tool" data-tool="bean" aria-label="별빛 콩 씨앗 선택" aria-pressed="false">${icon('bean')}<b>별빛 콩</b><small>25G · 45초</small></button>
         </nav>
       </div>
-      <div class="movement-control play-only"><div id="joystick" role="group" aria-label="캐릭터 이동 조이스틱"><span class="stick-arrows">↑<br>←　 →<br>↓</span><i id="joystick-knob"></i></div><small>WASD / 방향키 · 이동</small></div>
+      <div class="movement-control play-only"><div id="joystick" role="group" aria-label="캐릭터 이동 조이스틱"><span class="stick-arrows">↑<br>←　 →<br>↓</span><i id="joystick-knob"></i></div><small>살짝 밀어서 걸어요</small></div><div class="desktop-movement play-only"><span>W A S D</span> / 방향키로 산책 <i>·</i> E 행동 <i>·</i> M 전체 보기</div>
       <div class="character-actions play-only">
         <div class="interaction-prompt" id="interaction-prompt" role="status">밭이나 시설 가까이 이동하세요</div>
         <button id="interact" class="interact-button" disabled><kbd>E</kbd><span id="interact-icon">${icon('sprout')}</span><b id="interact-name">가까이 이동</b><small id="interact-detail">대상 자동 선택</small></button>
         <div class="quick-actions"><button data-use="leaf" aria-label="씨앗 심기"><kbd>1</kbd>${icon('leaf')}<span>심기</span></button><button data-use="water" aria-label="물주기"><kbd>2</kbd>${icon('drop')}<span>물주기</span></button><button data-use="harvest" aria-label="수확하기"><kbd>3</kbd>${icon('harvest')}<span>수확</span></button></div>
       </div>
-      <div id="player-label" class="player-label play-only" aria-hidden="true">YOU <span>▼</span></div>
-      <div class="utility-bar"><button id="help" title="게임 방법 / 튜토리얼" aria-label="게임 방법 / 튜토리얼">? <span>게임 방법</span></button><button id="pause" title="일시정지 (Esc)" aria-label="일시정지">${icon('pause')}</button><button id="mute" title="음소거" aria-label="음소거" aria-pressed="false">${icon('sound')}</button><button id="quality" title="렌더링 품질 전환 (Q)" aria-label="렌더링 품질 전환">SD</button><button id="fullscreen" title="전체 화면" aria-label="전체 화면">${icon('expand')}</button></div>
+      <div id="player-label" class="player-label play-only" aria-hidden="true"></div>
+      <div class="utility-bar"><button id="view-toggle" title="농장 전체 보기 (M)" aria-label="농장 전체 보기" aria-pressed="false">${icon('map')}</button><button id="pause" title="메뉴 (Esc)" aria-label="일시정지">${icon('menu')}</button></div>
       <div id="debug" hidden></div>
 
       <section class="overlay start-overlay briefing-overlay" id="start-screen" role="dialog" aria-modal="true" aria-labelledby="briefing-title" hidden>
-        <div class="start-panel mission-brief"><div class="transmission"><i></i> INCOMING TRANSMISSION <span>01</span></div>
+        <div class="start-panel mission-brief"><div class="transmission">${icon('sprout')} 아그리아–7에서 온 편지</div>
           <p class="start-kicker">ECO FARM · AGRIA–7</p><h2 id="briefing-title"><small>MISSION 01</small>가뭄 속 첫 수확</h2>
-          <p class="story">당신의 임무는 황폐해진 농업 행성을 복구하는 것입니다.</p>
+          <p class="story">작은 씨앗과 물뿌리개 하나.<br>우리의 농장에 다시 초록을 채워볼까요?</p>
           <ul class="brief-objectives"><li>제한시간 <b>8분</b></li><li>목표 <b>농작물 4개 납품</b></li><li>추가 조건 <b>최소 2개는 가뭄 이후 수확</b></li><li>주의사항 <b>물 자원은 제한되어 있음</b></li></ul>
           <p class="practice-note">직접 심고 가꾸는 5단계 연습 · 연습 중 임무 시간 정지</p>
           <button class="primary-button" id="learn">농장 운영 배우기 <span>↗</span></button>
@@ -100,13 +93,13 @@ export class GameHUD {
       </section>
 
       <aside class="tutorial-window play-only" id="tutorial-window" aria-label="인터랙티브 튜토리얼" hidden>
-        <div class="tutorial-heading"><span id="tutorial-step">TUTORIAL 01 / 05</span><b>연습 모드</b></div>
+        <div class="tutorial-heading"><span class="guide-avatar">${icon('sprout')}</span><b>새싹 안내소</b><span id="tutorial-step">01 / 05</span><button id="tutorial-more" aria-label="자세한 연습 안내" aria-expanded="false">?</button></div>
         <div class="tutorial-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
         <div aria-live="polite" aria-atomic="true"><p id="tutorial-feedback" class="tutorial-feedback"></p><h2 id="tutorial-title"></h2><p id="tutorial-description"></p><p id="tutorial-instruction" class="tutorial-instruction"></p></div>
         <p class="tutorial-clock">Ⅱ 임무 · 가뭄 타이머 정지</p>
         <p id="tutorial-reset-note" hidden>연습 기록은 초기화됩니다.<br>물 100 · 300G · 빈 밭 6칸 · 납품 0/4 · 08:00</p>
         <button class="primary-button" id="start-mission" hidden>본격적인 임무 시작 <span>↗</span></button>
-        <button class="text-button" id="end-practice">연습 건너뛰고 임무 시작</button>
+        <button class="text-button" id="end-practice">연습 건너뛰기 ↗</button>
       </aside>
       <div class="plot-guide" id="plot-guide" aria-hidden="true" hidden><span id="plot-guide-text">1번 밭</span><b>▼</b></div>
       <div class="crop-labels play-only" id="crop-labels"><svg class="crop-leaders" aria-hidden="true"><line id="supply-leader" visibility="hidden"/>${Array.from({ length: 6 }, (_, i) => `<line id="crop-leader-${i}" stroke="#bce5c5" visibility="hidden"/>`).join('')}</svg>${Array.from({ length: 6 }, (_, i) => `<div class="crop-label" id="crop-label-${i}" hidden><span class="crop-label-icon"></span><div><b id="crop-label-name-${i}"></b><small id="crop-label-state-${i}"></small></div></div>`).join('')}</div>
@@ -122,7 +115,7 @@ export class GameHUD {
 
       <section class="overlay intro-overlay" id="intro-screen" hidden><div class="cinema-top"><span>ECO FARM / FLIGHT 007</span><button id="skip">오프닝 건너뛰기 ↗</button></div><div class="intro-caption"><small id="intro-step">01 / DEEP SPACE</small><h2 id="intro-message">AGRIA–7 접근 중...</h2><p id="intro-sub">농업 기지의 물 공급량이 부족합니다.</p><div class="intro-progress"><i id="intro-meter"></i></div></div></section>
 
-      <section class="overlay modal-overlay" id="pause-screen" hidden><div class="modal small-modal"><span class="eyebrow">TAKE A BREATH</span><h2>잠시 쉬어가요</h2><p>농장과 임무 시간이 멈춰 있습니다.</p><button class="primary-button" id="resume">계속 가꾸기 <span>↗</span></button><button class="text-button" id="pause-help">게임 방법 / 튜토리얼</button><br><button class="text-button" id="pause-menu">메인 화면으로</button></div></section>
+      <section class="overlay modal-overlay" id="pause-screen" hidden><div class="modal small-modal"><span class="eyebrow">천천히, 쉬어 가요</span><h2>잠시 쉬어가요</h2><p>농장과 임무 시간이 멈춰 있습니다.</p><button class="primary-button" id="resume">계속 가꾸기 <span>↗</span></button><button class="text-button" id="pause-help">게임 방법 / 튜토리얼</button><br><button class="text-button" id="pause-menu">메인 화면으로</button><div class="pause-settings"><button id="help" aria-label="게임 방법 / 튜토리얼">?</button><button id="mute" aria-label="음소거" aria-pressed="false">${icon('sound')}</button><button id="quality" aria-label="렌더링 품질 전환">자동</button><button id="fullscreen" aria-label="전체 화면">${icon('expand')}</button></div></div></section>
 
       <section class="overlay modal-overlay" id="result-screen" hidden><div class="modal result-modal"><span class="eyebrow" id="result-kicker">MISSION COMPLETE</span><div class="result-seal" id="result-seal">S</div><h2 id="result-title">다시, 초록빛으로.</h2><p id="result-description">아그리아–7 첫 번째 농장 복구 성공!</p><div class="result-stats" id="result-stats"></div><p class="learning-message">작물의 수분을 확인하고 필요한 만큼만 물을 주면,<br>작은 물탱크로도 더 많은 생명을 키울 수 있어요.</p><button class="primary-button" id="retry">다시 도전하기 <span>↻</span></button><button class="text-button" id="main-menu">메인 화면으로</button></div></section>
       <div class="portrait-hint">↻ 가로 화면에서 농장을 더 넓게 볼 수 있어요.</div>`;
@@ -136,6 +129,8 @@ export class GameHUD {
     this.el('start-screen').addEventListener('keydown', e => this.trapFocus(e));
     click('retry', () => this.onRetry()); click('main-menu', () => this.onMenu()); click('pause-menu', () => this.onMenu());
     click('pause', () => this.onPause()); click('resume', () => this.onPause());
+    click('view-toggle', () => this.onView());
+    click('tutorial-more', () => { const expanded = this.el('tutorial-more').getAttribute('aria-expanded') !== 'true'; this.el('tutorial-more').setAttribute('aria-expanded', String(expanded)); this.el('tutorial-window').classList.toggle('expanded', expanded); });
     click('mute', () => this.onMute()); click('quality', () => this.onQuality());
     click('apply-action', () => this.onApply()); click('interact', () => this.onInteract());
     click('fullscreen', () => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen().catch(() => this.toast('이 브라우저에서는 전체 화면을 지원하지 않아요.')); });
@@ -198,6 +193,9 @@ export class GameHUD {
       deliver: ['납품하기', `보관함 ${state.inventory.length}개 · 판매하고 목표 달성`, 'delivery'],
     };
     const info = action ? text[action] : null;
+    this.root.classList.toggle('has-target', !!target);
+    this.el('player-label').hidden = !target;
+    this.set('player-label', busy ? '가꾸는 중…' : info ? `${this.root.dataset.touch === 'true' ? '' : 'E · '}${info[0]}` : '조금씩 자라고 있어요');
     this.set('interact-name', busy ? '작업 중…' : info?.[0] ?? (plot ? '자라는 중' : '가까이 이동'));
     this.set('interact-detail', info?.[1] ?? (plot?.crop ? `성장 ${Math.floor(plot.crop.growth * 100)}%` : '대상 자동 선택'));
     const glyph = info?.[2] ?? 'sprout';
@@ -224,6 +222,9 @@ export class GameHUD {
 
   resetTransient() {
     this.showHelp(false); this.toastUntil = 0;
+    this.root.querySelectorAll('details[open]').forEach(el => el.removeAttribute('open'));
+    this.el('tutorial-window').classList.remove('expanded');
+    this.el('tutorial-more').setAttribute('aria-expanded', 'false');
     this.el('toast').classList.remove('visible'); this.el('drought-alert').classList.remove('visible');
   }
 
@@ -250,53 +251,32 @@ export class GameHUD {
   }
 
   positionGuide(position: { x: number; y: number }) {
-    this.el('plot-guide').style.left = `${position.x}px`;
-    this.el('plot-guide').style.top = `${position.y - 48}px`;
+    const x = Math.max(120, Math.min(window.innerWidth - 120, position.x));
+    const y = Math.max(120, Math.min(window.innerHeight - 160, position.y - 45));
+    this.el('plot-guide').style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+    const offscreen = Math.abs(x - position.x) > 1 || Math.abs(y - position.y + 45) > 1;
+    this.el('plot-guide').classList.toggle('offscreen', offscreen);
+    this.el('plot-guide').querySelector('b')!.style.transform = offscreen ? `rotate(${Math.atan2(position.y - y, position.x - x) - Math.PI / 2}rad)` : '';
   }
 
-  positionCrops(state: GameState, world: FarmScene) {
-    const supply = world.projectSupply();
-    const supplyLabel = this.el('supply-label');
-    supplyLabel.style.left = `${supply.x}px`; supplyLabel.style.top = `${supply.y}px`;
-    supplyLabel.classList.toggle('receiving', world.harvestInFlight > 0);
-    if (!['playing', 'paused'].includes(state.phase)) return;
-    // Pack projected labels without covering one another, even on a narrow phone.
-    const occupied = [...this.root.querySelectorAll<HTMLElement>('.top-hud, .mission-widget, .tutorial-window, .plot-info, .bottom-hud, .utility-bar, .movement-control, .character-actions')]
-      .filter(el => el.getClientRects().length > 0).map(el => el.getBoundingClientRect());
-    const labels = state.plots.map(plot => {
-      const el = this.el(`crop-label-${plot.id}`), line = this.el(`crop-leader-${plot.id}`);
-      line.setAttribute('visibility', 'hidden');
-      return { el, line, crop: plot.crop, anchor: plot.crop ? world.projectCrop(plot.id, plot.crop.kind) : null, size: el.getBoundingClientRect() };
-    }).filter(label => label.crop && !label.el.hidden).sort((a, b) => a.anchor!.y - b.anchor!.y);
-    const supplyLine = this.el('supply-leader'); supplyLine.setAttribute('visibility', 'hidden');
-    labels.unshift({ el: supplyLabel, line: supplyLine, crop: null, anchor: supply, size: supplyLabel.getBoundingClientRect() });
-    for (const label of labels) {
-      const { el, line, size } = label, anchor = label.anchor!;
-      let best = { left: anchor.x - size.width / 2, top: anchor.y - size.height, score: Infinity };
-      for (const row of [0, -1, 1, -2, 2, -3, 3, -4, 4]) for (const column of [0, -1, 1, -2, 2]) {
-        const left = Math.max(8, Math.min(innerWidth - size.width - 8, anchor.x - size.width / 2 + column * (size.width + 6)));
-        const top = Math.max(8, Math.min(innerHeight - size.height - 8, anchor.y - size.height + row * (size.height + 6)));
-        const right = left + size.width, bottom = top + size.height;
-        const collisions = occupied.filter(rect => left < rect.right + 4 && right + 4 > rect.left && top < rect.bottom + 4 && bottom + 4 > rect.top).length;
-        const score = collisions * 100000 + (left + size.width / 2 - anchor.x) ** 2 + (bottom - anchor.y) ** 2;
-        if (score < best.score) best = { left, top, score };
-      }
-      el.style.left = `${best.left + size.width / 2}px`; el.style.top = `${best.top + size.height}px`;
-      occupied.push(new DOMRect(best.left, best.top, size.width, size.height));
-      const bottom = best.top + size.height;
-      if (Math.abs(bottom - anchor.y) > 5 || Math.abs(best.left + size.width / 2 - anchor.x) > 5) {
-        line.setAttribute('x1', String(best.left + size.width / 2)); line.setAttribute('y1', String(bottom));
-        line.setAttribute('x2', String(anchor.x)); line.setAttribute('y2', String(anchor.y + 8));
-        line.setAttribute('stroke', !label.crop ? '#d4bd88' : label.crop.kind === 'leaf' ? '#bce5c5' : '#d2b9ef');
-        line.setAttribute('visibility', 'visible');
-      }
-    }
+  positionCrops(state: GameState, world: FarmScene, hero: { x: number; y: number }) {
+    // Only the nearby field gets a small bubble; no permanent field labels or leader lines.
+    const label = this.el('plot-info');
+    const plot = state.plots[state.selected];
+    if (!plot || label.hidden) return;
+    const anchor = world.projectCrop(plot.id, plot.crop?.kind ?? 'leaf');
+    const width = window.innerHeight < 580 ? 184 : 210;
+    const side = hero.x < anchor.x ? 1 : -1;
+    const x = Math.max(width / 2 + 12, Math.min(window.innerWidth - width / 2 - 12, anchor.x + side * width * 0.6));
+    let y = Math.max(115, Math.min(window.innerHeight - 220, anchor.y - 12));
+    if (Math.abs(x - hero.x) < width / 2 + 65 && Math.abs(y - hero.y) < 100) y = Math.max(115, hero.y - 45);
+    label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
   }
 
   private cropLabels(state: GameState) {
     for (const plot of state.plots) {
       const label = this.el(`crop-label-${plot.id}`), crop = plot.crop;
-      label.hidden = !crop;
+      label.hidden = true;
       if (!crop) continue;
       if (label.dataset.crop !== crop.kind) {
         label.dataset.crop = crop.kind;
@@ -314,7 +294,7 @@ export class GameHUD {
     const step = state.tutorial;
     this.root.dataset.tutorial = step ?? '';
     this.el('tutorial-window').hidden = !step;
-    this.el('plot-guide').hidden = !step || step === 'complete' || state.phase !== 'playing';
+    this.el('plot-guide').hidden = !step || !['plant', 'deliver'].includes(step) || state.phase !== 'playing';
     const key = `${step}:${state.tutorialToolReady}:${state.phase}`;
     if (key === this.lastTutorial) return;
     this.lastTutorial = key;
@@ -327,7 +307,7 @@ export class GameHUD {
     this.el('crop-details').classList.toggle('tutorial-highlight', step === 'grow');
     this.root.querySelector('.cargo-resource')!.classList.toggle('tutorial-highlight', step === 'deliver');
     if (!info) return;
-    this.set('tutorial-step', step === 'complete' ? 'TUTORIAL COMPLETE' : `TUTORIAL 0${info.number} / 05`);
+    this.set('tutorial-step', step === 'complete' ? '준비 완료' : `0${info.number} / 05`);
     this.set('tutorial-title', info.title); this.set('tutorial-description', info.description);
     this.set('tutorial-instruction', info.instruction); this.set('tutorial-feedback', info.feedback);
     this.set('plot-guide-text', step === 'deliver' ? '보급 기지로 이동하세요' : step === 'grow' ? '성장 관찰 중' : '1번 밭 가까이 이동하세요');

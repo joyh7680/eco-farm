@@ -1,20 +1,23 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import type { Crop, GameState } from './GameState';
 import type { CropKind } from './GameConfig';
 import { TUTORIAL_PLOT } from './Tutorial';
 import { Player, PLOT_POSITIONS, type FarmTarget } from './Player';
+import { FollowCamera } from './FollowCamera';
 
 const C = {
-  grass: '#427d54', grassLight: '#75a75c', dark: '#193f37', soil: '#674b36',
-  wood: '#a98959', cream: '#e8dec1', teal: '#347d70', orange: '#e8aa4d',
-  leaf: '#7eae46', pink: '#e5a0b4', blue: '#8edcdb', metal: '#546b5e',
+  grass: '#98be77', grassLight: '#b2cd83', dark: '#426b55', soil: '#aa7954',
+  wood: '#c69b69', cream: '#fff0cf', teal: '#6ba68c', orange: '#f0b76b',
+  leaf: '#99bf68', pink: '#eeb8b6', blue: '#9cdee0', metal: '#819a8c',
 };
 const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-const cylinderGeo = new THREE.CylinderGeometry(1, 1, 1, 8);
+const roundedGeo = new RoundedBoxGeometry(1, 1, 1, 1, 0.12);
+const cylinderGeo = new THREE.CylinderGeometry(1, 1, 1, 16);
 const coneGeo = new THREE.ConeGeometry(1, 1, 7);
 const rockGeo = new THREE.IcosahedronGeometry(1, 0);
-const sphereGeo = new THREE.SphereGeometry(1, 8, 6);
+const sphereGeo = new THREE.SphereGeometry(1, 16, 10);
 const shadowGeo = new THREE.CircleGeometry(1, 12);
 const moonShape = new THREE.Shape();
 moonShape.absarc(0, 0, 0.16, Math.PI * 0.28, Math.PI * 1.72, false);
@@ -30,10 +33,15 @@ starShape.closePath();
 const starGeo = new THREE.ShapeGeometry(starShape);
 const moonMaterial = new THREE.MeshBasicMaterial({ color: '#fff8c1', side: THREE.DoubleSide });
 const starMaterial = new THREE.MeshBasicMaterial({ color: '#ffe49b', side: THREE.DoubleSide });
-const shadowMaterial = new THREE.MeshBasicMaterial({ color: '#173e2b', transparent: true, opacity: 0.16, depthWrite: false });
+const shadowCanvas = document.createElement('canvas'); shadowCanvas.width = shadowCanvas.height = 64;
+const shadowContext = shadowCanvas.getContext('2d')!;
+const shadowGradient = shadowContext.createRadialGradient(32, 32, 2, 32, 32, 32);
+shadowGradient.addColorStop(0, '#365c49a0'); shadowGradient.addColorStop(0.5, '#365c4950'); shadowGradient.addColorStop(1, '#365c4900');
+shadowContext.fillStyle = shadowGradient; shadowContext.fillRect(0, 0, 64, 64);
+const shadowMaterial = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(shadowCanvas), transparent: true, opacity: 0.55, depthWrite: false });
 const materials = new Map<string, THREE.MeshLambertMaterial>();
 function mat(color: string) {
-  if (!materials.has(color)) materials.set(color, new THREE.MeshLambertMaterial({ color, flatShading: true }));
+  if (!materials.has(color)) materials.set(color, new THREE.MeshLambertMaterial({ color }));
   return materials.get(color)!;
 }
 function mesh(parent: THREE.Object3D, geometry: THREE.BufferGeometry, color: string | THREE.Material, x: number, y: number, z: number, sx: number, sy: number, sz: number) {
@@ -41,13 +49,14 @@ function mesh(parent: THREE.Object3D, geometry: THREE.BufferGeometry, color: str
   object.position.set(x, y, z); object.scale.set(sx, sy, sz); parent.add(object); return object;
 }
 function box(parent: THREE.Object3D, color: string | THREE.Material, x: number, y: number, z: number, sx: number, sy: number, sz: number) {
-  return mesh(parent, boxGeo, color, x, y, z, sx, sy, sz);
+  const rounded = Math.min(sx, sy, sz) > 0.22 && Math.max(sx, sy, sz) / Math.min(sx, sy, sz) < 10;
+  return mesh(parent, rounded ? roundedGeo : boxGeo, color, x, y, z, sx, sy, sz);
 }
 function cylinder(parent: THREE.Object3D, color: string, x: number, y: number, z: number, radius: number, height: number) {
   return mesh(parent, cylinderGeo, color, x, y, z, radius, height, radius);
 }
 function orb(parent: THREE.Object3D, color: string | THREE.Material, x: number, y: number, z: number, sx: number, sy = sx, sz = sx) {
-  return mesh(parent, rockGeo, color, x, y, z, sx, sy, sz);
+  return mesh(parent, sphereGeo, color, x, y, z, sx, sy, sz);
 }
 function group(parent: THREE.Object3D, x: number, y: number, z: number) {
   const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g;
@@ -109,20 +118,20 @@ function sign(parent: THREE.Object3D, text: string, x: number, y: number, z: num
   const ctx = canvas.getContext('2d')!;
   ctx.fillStyle = background; ctx.fillRect(0, 0, 512, 128);
   ctx.fillStyle = '#f4e9c9'; ctx.font = 'bold 54px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 256, 67);
-  const texture = new THREE.CanvasTexture(canvas); texture.magFilter = THREE.NearestFilter; texture.colorSpace = THREE.SRGBColorSpace;
+  const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
   return mesh(parent, new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: texture }), x, y, z, width, height, 1);
 }
 let seed = 73;
 function random() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
 function groundTexture() {
-  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 128;
+  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = C.grass; ctx.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 1300; i++) {
-    ctx.fillStyle = ['#477f53', '#4c8757', '#3b754e', '#568b57', '#618f59'][i % 5];
-    ctx.fillRect(Math.floor(random() * 128), Math.floor(random() * 128), 1 + Math.floor(random() * 2), 1);
+  ctx.fillStyle = C.grass; ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 160; i++) {
+    ctx.fillStyle = ['#c8d99b18', '#70995f12', '#d8e5b01c'][i % 3];
+    ctx.beginPath(); ctx.ellipse(random() * 256, random() * 256, 5 + random() * 15, 3 + random() * 6, random() * 6, 0, Math.PI * 2); ctx.fill();
   }
-  const tex = new THREE.CanvasTexture(canvas); tex.magFilter = THREE.NearestFilter;
+  const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(6, 5); tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
@@ -138,6 +147,7 @@ interface HarvestFlight { root: THREE.Group; start: THREE.Vector3; control: THRE
 export class FarmScene {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.OrthographicCamera(-19, 19, 11, -11, 0.1, 180);
+  readonly view = new FollowCamera(this.camera, window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   readonly renderer: THREE.WebGLRenderer;
   readonly targets: THREE.Object3D[] = [];
   readonly plots: PlotVisual[] = [];
@@ -162,9 +172,14 @@ export class FarmScene {
   private supplyPulseTime = 0;
   private dryBlend = 0;
   private elapsed = 0;
-  private height = 360;
-  private width = 640;
+  private height = 720;
+  private width = 1152;
   private highQuality = false;
+  private resolutionScale = 1;
+  private slowFrames = 0;
+  private sampleFrames = 0;
+  private sampleTime = 0;
+  private lastParticleCount = 0;
   private readyColor = new THREE.Color('#e9cd69');
   private dryColor = new THREE.Color('#a69a59');
   private leafColor = new THREE.Color('#79c5a1');
@@ -180,20 +195,30 @@ export class FarmScene {
   private legs: THREE.Group[] = [];
   private wateringCan!: THREE.Group;
   private targetRing!: THREE.Mesh;
+  private occludedSilhouette!: THREE.Group;
+  private sightRay = new THREE.Ray();
+  private sightPoint = new THREE.Vector3();
+  private sightHit = new THREE.Vector3();
+  private occluders = [
+    [-7.4, -6.5, 3.4, 2.3, 4], [-6.9, 7.1, 2.7, 1.5, 2.3],
+    [-10, -0.3, 1.4, 1.4, 3.7], [9.6, 1.2, 1.6, 1.6, 2.8], [7.4, -7.2, 1.1, 1.1, 4.8],
+    [12.1, -6, 1.5, 1.5, 4.8], [-12.3, -7.8, 1.3, 1.3, 4.2],
+    [10.8, 7.9, 1.9, 1.9, 5.5], [-12.4, 6.8, 1.7, 1.7, 5], [2.3, -9, 1.4, 1.4, 4.3],
+  ].map(([x, z, hx, hz, height]) => new THREE.Box3(new THREE.Vector3(x - hx, 0.2, z - hz), new THREE.Vector3(x + hx, height, z + hz)));
   private reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   constructor(container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'low-power' });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'default' });
     this.renderer.setPixelRatio(1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.setClearColor('#638e7e');
     this.renderer.domElement.id = 'world';
     this.renderer.domElement.setAttribute('aria-label', 'WASD, 방향키 또는 가상 조이스틱으로 우주 캐릭터를 이동하는 3D 농장');
     container.append(this.renderer.domElement);
-    this.scene.background = new THREE.Color('#719d88');
-    this.scene.fog = new THREE.Fog('#719d88', 48, 105);
-    this.scene.add(new THREE.HemisphereLight('#f6f0c9', '#385b48', 2.35));
-    this.sun = new THREE.DirectionalLight('#fff1d0', 2.6); this.sun.position.set(-12, 24, 10); this.scene.add(this.sun);
+    this.scene.background = new THREE.Color('#dcead1');
+    this.scene.fog = new THREE.Fog('#dcead1', 50, 100);
+    this.scene.add(new THREE.HemisphereLight('#fff4dc', '#739166', 2.1));
+    this.sun = new THREE.DirectionalLight('#fff1d0', 1.75); this.sun.position.set(-12, 24, 10); this.scene.add(this.sun);
     this.camera.position.set(27, 31, 36); this.camera.lookAt(0, 0, 0);
     this.groundMaterial = new THREE.MeshLambertMaterial({ map: groundTexture(), color: '#ffffff' });
     this.terrain();
@@ -235,10 +260,8 @@ export class FarmScene {
   }
 
   private terrain() {
-    box(this.scene, '#3a6c51', 0, -0.9, 0, 31.8, 1.7, 25.2);
-    box(this.scene, '#836f4b', 0, -0.25, 0, 32.2, 0.45, 25.6);
-    box(this.scene, this.groundMaterial, 0, 0, 0, 32, 0.32, 25.4);
-    box(this.scene, '#4e7f65', 0, -1.92, 0, 300, 0.5, 300);
+    box(this.scene, this.groundMaterial, 0, 0, 0, 220, 0.32, 220);
+    box(this.scene, '#98be77', 0, -0.9, 0, 230, 1.5, 230);
     // Walkways are real geometry, with irregular inset paving stones.
     box(this.scene, '#b7a877', 0.2, 0.175, -4.15, 22, 0.08, 1.3);
     box(this.scene, '#b7a877', 0.4, 0.177, 1.4, 1.3, 0.08, 12.3);
@@ -433,7 +456,11 @@ export class FarmScene {
     box(this.scene, C.soil, x, 0.67, z, 2.1, 0.05, 0.5);
     for (let i = 0; i < 5; i++) {
       cylinder(this.scene, '#667d40', x - 0.85 + i * 0.42, 0.95, z, 0.035, 0.65);
-      orb(this.scene, i % 2 ? C.pink : '#e9cc71', x - 0.85 + i * 0.42, 1.25, z, 0.15, 0.13, 0.15);
+      for (let petal = 0; petal < 5; petal++) {
+        const angle = petal * Math.PI * 2 / 5;
+        orb(this.scene, i % 2 ? C.pink : '#efcf83', x - 0.85 + i * 0.42 + Math.cos(angle) * 0.12, 1.22, z + Math.sin(angle) * 0.12, 0.11, 0.08, 0.11);
+      }
+      orb(this.scene, '#fff0bd', x - 0.85 + i * 0.42, 1.28, z, 0.075, 0.06, 0.075);
     }
   }
 
@@ -520,52 +547,88 @@ export class FarmScene {
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
     const aspect = w / h;
-    this.height = this.highQuality ? 540 : 360;
-    this.width = Math.round(this.height * aspect);
+    // Crisp at common tablet sizes; bound total fill cost on large/retina screens.
+    const budget = this.highQuality ? 1_850_000 : 1_050_000;
+    const scale = Math.min(1.5, window.devicePixelRatio || 1, Math.sqrt(budget / (w * h))) * this.resolutionScale;
+    this.height = Math.max(1, Math.round(h * scale));
+    this.width = Math.max(1, Math.round(w * scale));
     this.renderer.setSize(this.width, this.height, false);
-    const vertical = aspect < 1.3 ? 33 / aspect : 25.5;
-    this.camera.left = -vertical * aspect / 2; this.camera.right = vertical * aspect / 2;
-    this.camera.top = vertical / 2; this.camera.bottom = -vertical / 2;
-    this.camera.updateProjectionMatrix();
+    this.view.resize(aspect);
     this.spaceCamera.aspect = aspect; this.spaceCamera.updateProjectionMatrix();
   }
 
-  toggleQuality() { this.highQuality = !this.highQuality; this.resize(); return this.highQuality; }
+  toggleQuality() { this.highQuality = !this.highQuality; this.resolutionScale = 1; this.resize(); return this.highQuality; }
+
+  adaptResolution(dt: number, active: boolean) {
+    if (!active || dt <= 0) { this.sampleFrames = 0; this.sampleTime = 0; return; }
+    this.sampleTime += dt; this.sampleFrames++;
+    if (this.sampleTime < 3) return;
+    const fps = this.sampleFrames / this.sampleTime;
+    this.slowFrames = fps < 32 ? this.slowFrames + 1 : 0;
+    if (this.slowFrames >= 2 && this.resolutionScale > 0.65) {
+      this.resolutionScale = Math.max(0.65, this.resolutionScale - 0.12);
+      this.resize(); this.slowFrames = 0;
+    }
+    this.sampleFrames = 0; this.sampleTime = 0;
+  }
 
   private makeAstronaut() {
-    this.astronaut = group(this.scene, 0, 0.27, 7.4);
-    const ring = mesh(this.astronaut, new THREE.RingGeometry(0.45, 0.53, 20), new THREE.MeshBasicMaterial({ color: '#b8fff0', side: THREE.DoubleSide }), 0, 0.01, 0, 1, 1, 1);
-    ring.rotation.x = -Math.PI / 2;
+    this.astronaut = group(this.scene, 0, 0.2, 7.4);
+    const shadow = mesh(this.astronaut, shadowGeo, shadowMaterial, 0, 0.005, 0, 0.9, 0.62, 1);
+    shadow.rotation.x = -Math.PI / 2;
     this.body = group(this.astronaut, 0, 0, 0);
-    box(this.body, '#f5eacf', 0, 0.95, 0, 0.66, 0.72, 0.48);
-    box(this.body, '#3b7d73', 0, 0.98, -0.32, 0.53, 0.6, 0.27);
-    box(this.body, '#e5aa50', 0, 0.79, 0.25, 0.53, 0.15, 0.06);
-    box(this.body, '#36796f', 0, 1.13, 0.25, 0.32, 0.24, 0.05);
-    orb(this.body, '#f6edce', 0, 1.62, 0, 0.48, 0.48, 0.43);
-    orb(this.body, '#294f60', 0, 1.64, 0.22, 0.4, 0.31, 0.29);
-    box(this.body, '#a0ece1', -0.12, 1.75, 0.48, 0.21, 0.07, 0.03);
+    orb(this.body, '#f9f0d8', 0, 1.05, 0, 0.47, 0.58, 0.36);
+    box(this.body, '#84baa1', 0, 1.09, -0.32, 0.55, 0.65, 0.34);
+    cylinder(this.body, '#e8b56d', 0, 1.5, 0, 0.34, 0.14);
+    orb(this.body, '#a4cdb2', 0, 1.07, 0.32, 0.23, 0.23, 0.05);
+    orb(this.body, '#fff6df', 0, 1.88, 0, 0.67, 0.64, 0.57);
+    orb(this.body, '#a0d5ce', 0, 1.87, 0.29, 0.56, 0.43, 0.36);
     for (const side of [-1, 1]) {
-      const arm = group(this.body, side * 0.43, 1.2, 0);
-      box(arm, '#eee5c7', 0, -0.23, 0, 0.23, 0.47, 0.25);
-      box(arm, '#3c8076', 0, -0.49, 0, 0.25, 0.17, 0.26);
+      orb(this.body, '#3b625e', side * 0.17, 1.87, 0.632, 0.045, 0.065, 0.025);
+      orb(this.body, '#f3c0a8', side * 0.32, 1.75, 0.59, 0.08, 0.035, 0.025);
+    }
+    orb(this.body, '#ecffed', -0.22, 2.1, 0.59, 0.13, 0.06, 0.025).rotation.z = -0.35;
+    cylinder(this.body, '#739b61', 0, 2.55, 0, 0.035, 0.22);
+    orb(this.body, '#9fc879', -0.13, 2.64, 0, 0.18, 0.07, 0.1).rotation.z = -0.4;
+    orb(this.body, '#badb8c', 0.13, 2.7, 0, 0.19, 0.08, 0.1).rotation.z = 0.45;
+    for (const side of [-1, 1]) {
+      const arm = group(this.body, side * 0.47, 1.3, 0);
+      orb(arm, '#f9f0d8', 0, -0.22, 0, 0.17, 0.33, 0.18);
+      orb(arm, '#8abca1', 0, -0.47, 0.03, 0.19, 0.17, 0.18);
       this.arms.push(arm); bake(arm);
       const leg = group(this.body, side * 0.19, 0.61, 0);
-      box(leg, '#eee5c7', 0, -0.22, 0, 0.27, 0.45, 0.29);
-      box(leg, '#355c56', 0, -0.48, 0.07, 0.3, 0.19, 0.43);
+      orb(leg, '#f9f0d8', 0, -0.2, 0, 0.17, 0.27, 0.19);
+      orb(leg, '#b98d60', 0, -0.44, 0.1, 0.21, 0.16, 0.3);
       this.legs.push(leg); bake(leg);
     }
     this.wateringCan = group(this.arms[1], 0, -0.6, 0.15);
     box(this.wateringCan, '#82cfd3', 0, 0, 0, 0.35, 0.35, 0.4);
     const spout = box(this.wateringCan, '#c3f1e7', 0, 0.1, 0.36, 0.12, 0.12, 0.45); spout.rotation.x = -0.3;
     bake(this.wateringCan); bake(this.body, [...this.arms, ...this.legs]);
+    // A single inexpensive silhouette keeps the explorer legible behind trees/buildings.
+    const ghost = this.occludedSilhouette = group(this.astronaut, 0, 0, 0);
+    const ghostMaterial = new THREE.MeshBasicMaterial({ color: '#fff8dd', transparent: true, opacity: 0.35, depthFunc: THREE.GreaterDepth, depthWrite: false });
+    orb(ghost, ghostMaterial, 0, 1.88, 0, 0.69, 0.66, 0.59);
+    orb(ghost, ghostMaterial, 0, 1.05, 0, 0.5, 0.61, 0.4);
+    bake(ghost); ghost.traverse(node => { node.renderOrder = 10; });
+    ghost.visible = false;
     this.targetRing = mesh(this.scene, new THREE.RingGeometry(0.5, 0.58, 24), new THREE.MeshBasicMaterial({ color: '#ffe49a', side: THREE.DoubleSide, transparent: true, opacity: 0.8 }), 0, 0.28, 0, 1, 1, 1);
     this.targetRing.rotation.x = -Math.PI / 2;
     this.targetRing.visible = false;
   }
 
-  updatePlayer(player: Player, target: FarmTarget | null) {
-    this.astronaut.position.set(player.x, 0.27, player.z);
-    this.body.rotation.y = player.angle;
+  updatePlayer(player: Player, target: FarmTarget | null, dt: number) {
+    this.astronaut.position.set(player.x, 0.2, player.z);
+    this.sightPoint.set(player.x, 2.1, player.z);
+    const sightDistance = this.sightPoint.distanceTo(this.camera.position);
+    this.sightRay.origin.copy(this.camera.position);
+    this.sightRay.direction.copy(this.sightPoint).sub(this.camera.position).normalize();
+    this.occludedSilhouette.visible = this.occluders.some(box => {
+      const hit = this.sightRay.intersectBox(box, this.sightHit);
+      return !!hit && hit.distanceTo(this.camera.position) < sightDistance - 0.8;
+    });
+    const turn = Math.atan2(Math.sin(player.angle - this.body.rotation.y), Math.cos(player.angle - this.body.rotation.y));
+    this.body.rotation.y += turn * (this.reducedMotion ? 1 : 1 - Math.exp(-18 * dt));
     const stride = this.reducedMotion ? 0.18 : 0.55;
     const walk = player.moving ? Math.sin(player.walkTime) * stride : 0;
     const action = Math.sin((1 - player.actionTime / 0.48) * Math.PI);
@@ -578,7 +641,7 @@ export class FarmScene {
     if (target) this.targetRing.position.set(target.x, 0.29, target.z);
   }
 
-  projectPlayer(player: Player) { return this.projectPosition(new THREE.Vector3(player.x, 2.7, player.z)); }
+  projectPlayer(player: Player) { return this.projectPosition(new THREE.Vector3(player.x, 3.15, player.z)); }
   projectTarget(target: FarmTarget) { return this.projectPosition(new THREE.Vector3(target.x, target.kind === 'plot' ? 0.7 : 3.7, target.z)); }
 
   hit(clientX: number, clientY: number): { plot?: number; delivery?: boolean; tank?: boolean } | null {
@@ -687,7 +750,8 @@ export class FarmScene {
   }
 
   render(state: GameState, dt: number, introTime = -1) {
-    this.elapsed += dt;
+    const effectDt = state.phase === 'paused' ? 0 : dt;
+    this.elapsed += effectDt;
     this.updateHarvest(state.phase === 'playing' ? dt : 0);
     this.dryBlend += ((state.drought ? 1 : 0) - this.dryBlend) * Math.min(1, dt * 0.8);
     this.groundMaterial.color.set('#ffffff').lerp(this.dryColor, this.dryBlend * 0.45);
@@ -704,10 +768,12 @@ export class FarmScene {
       if (state.phase === 'menu') v.marker.visible = false;
       if (!state.plots[i].crop) (v.soil.material as THREE.MeshLambertMaterial).color.set(C.soil).lerp(this.dryColor, this.dryBlend * 0.45);
     });
+    let particleCount = 0;
     this.particles.forEach((p, i) => {
       if (p.active) {
-        p.life -= dt; p.active = p.life > 0;
-        p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vy -= 4 * dt;
+        particleCount++;
+        p.life -= effectDt; p.active = p.life > 0;
+        p.x += p.vx * effectDt; p.y += p.vy * effectDt; p.z += p.vz * effectDt; p.vy -= 4 * effectDt;
         this.dummy.position.set(p.x, Math.max(0.3, p.y), p.z);
         this.dummy.scale.setScalar(p.active ? p.size * Math.min(1, p.life * 4) : 0);
         this.dummy.rotation.set(this.elapsed * 2, i, 0);
@@ -715,8 +781,12 @@ export class FarmScene {
       } else this.dummy.scale.setScalar(0);
       this.dummy.updateMatrix(); this.particleMesh.setMatrixAt(i, this.dummy.matrix);
     });
-    this.particleMesh.instanceMatrix.needsUpdate = true;
-    this.particleMesh.instanceColor!.needsUpdate = true;
+    this.particleMesh.visible = particleCount > 0;
+    if (particleCount || this.lastParticleCount) {
+      this.particleMesh.instanceMatrix.needsUpdate = true;
+      this.particleMesh.instanceColor!.needsUpdate = true;
+    }
+    this.lastParticleCount = particleCount;
     if (introTime >= 0 && introTime < 4.2) {
       const t = introTime / 4.2;
       this.planet.rotation.y = this.elapsed * 0.04;
@@ -735,6 +805,7 @@ export class FarmScene {
   }
 
   resetEffects() {
+    this.view.reset();
     this.particles.forEach(p => { p.active = false; }); this.dryBlend = 0;
     this.harvestFlights.forEach(flight => flight.root.removeFromParent()); this.harvestFlights = [];
     this.supplyPulseTime = 0;

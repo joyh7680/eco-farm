@@ -44,7 +44,13 @@ export class Game {
     this.hud.onMove = (x, y) => this.player.stick(x, y);
     this.hud.onPause = () => this.pause();
     this.hud.onMute = () => { this.audio.muted = !this.audio.muted; this.hud.mute(this.audio.muted); };
-    this.hud.onQuality = () => { const high = this.world.toggleQuality(); this.hud.el('quality').textContent = high ? 'HD' : 'SD'; };
+    this.hud.onQuality = () => { const high = this.world.toggleQuality(); this.hud.el('quality').textContent = high ? '선명' : '자동'; };
+    this.hud.onView = () => {
+      if (!['playing', 'paused'].includes(this.state.phase)) return;
+      const overview = this.world.view.toggle();
+      this.hud.el('view-toggle').setAttribute('aria-pressed', String(overview));
+      this.hud.el('view-toggle').setAttribute('aria-label', overview ? '캐릭터 따라가기' : '농장 전체 보기');
+    };
     this.world.renderer.domElement.addEventListener('pointerdown', e => {
       if (this.state.phase !== 'playing' || e.button > 0) return;
       const target = this.world.hit(e.clientX, e.clientY);
@@ -76,6 +82,7 @@ export class Game {
       if (this.state.phase === 'briefing') { if (e.code === 'Enter') { e.preventDefault(); this.beginTutorial(); } return; }
       if (e.code === 'F3') { e.preventDefault(); this.hud.el('debug').hidden = !this.hud.el('debug').hidden; }
       if (e.code === 'KeyQ') this.hud.onQuality();
+      if (e.code === 'KeyM') this.hud.onView();
       if (e.code === 'Space' || e.code === 'Escape') { e.preventDefault(); if (this.state.phase === 'intro') this.finishIntro(); else this.pause(); }
       if (this.state.phase !== 'playing') return;
       const keys: Record<string, Action> = { Digit1: this.seed, Digit2: 'water', Digit3: 'harvest' };
@@ -160,7 +167,7 @@ export class Game {
   }
 
   private clearInput() { this.player.clearInput(); this.hud.resetJoystick(); }
-  private resetPlayer() { this.player.reset(); this.seed = 'leaf'; this.hud.resetJoystick(); }
+  private resetPlayer() { this.player.reset(); this.seed = 'leaf'; this.hud.resetJoystick(); this.hud.el('view-toggle').setAttribute('aria-pressed', 'false'); this.hud.el('view-toggle').setAttribute('aria-label', '농장 전체 보기'); }
 
   contextAction(target = this.target): Action | 'refill' | 'deliver' | null {
     if (!target) return null;
@@ -230,15 +237,18 @@ export class Game {
       while (this.accumulator >= 0.05) { this.state.update(0.05); this.accumulator -= 0.05; }
       this.processEvents();
     }
+    this.world.view.update(this.player, ['playing', 'paused'].includes(this.state.phase), dt);
+    this.world.adaptResolution(dt, this.state.phase === 'playing');
+    this.hud.root.dataset.overview = String(this.world.view.overview);
     this.hudTime += dt;
     if (this.hudTime >= 0.1) {
       this.hud.update(this.state);
       this.hud.updateInteraction(this.state, this.target, this.contextAction(), this.seed, this.player.actionTime > 0);
-      if (this.state.tutorial) this.hud.positionGuide(this.state.tutorial === 'deliver' ? this.world.projectTarget(FARM_TARGETS[7]) : this.world.projectPlot(TUTORIAL_PLOT));
-      this.hud.positionCrops(this.state, this.world);
       this.hudTime = 0;
     }
-    this.world.updatePlayer(this.player, this.state.phase === 'playing' ? this.target : null);
+    if (this.state.tutorial) this.hud.positionGuide(this.state.tutorial === 'deliver' ? this.world.projectTarget(FARM_TARGETS[7]) : this.world.projectPlot(TUTORIAL_PLOT));
+    this.hud.positionCrops(this.state, this.world, this.world.projectPlayer(this.player));
+    this.world.updatePlayer(this.player, this.state.phase === 'playing' ? this.target : null, this.state.phase === 'paused' ? 0 : dt);
     this.world.render(this.state, dt, this.state.phase === 'intro' ? this.introTime : -1);
     this.hud.positionPlayer(this.world.projectPlayer(this.player));
     this.frames++; this.fpsTime += dt;

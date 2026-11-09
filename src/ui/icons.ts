@@ -1,4 +1,7 @@
 const paths: Record<string, string> = {
+  map: '<path d="m5 8 9-3 9 3 8-3v23l-8 3-9-3-9 3Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M14 5v23M23 8v23" stroke="currentColor" stroke-width="1.5"/><circle cx="19" cy="17" r="3" fill="#e5af67"/>',
+  menu: '<path d="M8 12h20M8 19h20M8 26h13" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/>',
+
   leaf: '<path d="M18 31C5 32 1 22 5 17c-2-8 6-10 10-6 5-8 13-5 13 2 9 2 7 13 1 15-3 4-7 4-11 3" fill="#79c5a1" stroke="#285c54" stroke-width="1.5"/><path d="M18 30C7 24 10 17 16 18c-1-7 8-8 10-2 6 6-1 12-8 14Z" fill="#c8edc4" stroke="#528e75"/><path d="m18 29 3-10m-3 6-4-3" fill="none" stroke="#528e75"/><path d="M28 2a6 6 0 1 0 6 8c-6 2-10-3-6-8Z" fill="#fff1ae" stroke="#ad924c"/>',
   bean: '<path d="M15 32V7m0 14C3 22 3 13 8 14c4 0 7 5 7 7m0-6c11 1 12-7 7-7-4 0-7 4-7 7" fill="#6895a0" stroke="#365d70" stroke-width="1.5"/><path d="M22 16c10 1 11 15 4 15-6 0-8-10-4-15Z" fill="#ae91d9" stroke="#65518d" stroke-width="1.5"/><g fill="#e9dcfa"><circle cx="24" cy="20" r="2"/><circle cx="26" cy="24" r="2"/><circle cx="26" cy="28" r="2"/></g><path d="m15 1 2 4 5 1-4 3 1 5-4-2-4 2 1-5-4-3 5-1Z" fill="#ffe49b" stroke="#b18b50"/>',
   water: '<path d="M9 13h15v15H9zM9 16H4v8h5m15-8 6-5 3 4-9 8" fill="#79b5b1" stroke="#335e59" stroke-width="2"/><path d="M12 12V7h9v5" fill="none" stroke="#335e59" stroke-width="2"/><path d="m31 20-1 4m4-2-1 4" stroke="#85c9d1" stroke-width="2"/>',

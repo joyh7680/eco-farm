@@ -31,7 +31,7 @@ export class Player {
   static readonly reach = 1.05;
   x = 0;
   z = 7.4;
-  angle = Math.PI;
+  angle = 0.65;
   moving = false;
   walkTime = 0;
   actionTime = 0;
@@ -41,7 +41,7 @@ export class Player {
   private stickY = 0;
 
   reset() {
-    this.x = 0; this.z = 7.4; this.angle = Math.PI;
+    this.x = 0; this.z = 7.4; this.angle = 0.65;
     this.moving = false; this.walkTime = 0; this.actionTime = 0; this.action = '';
     this.clearInput();
   }
